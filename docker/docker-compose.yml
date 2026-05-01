@@ -1,0 +1,115 @@
+version: "3.9"
+
+services:
+  aizen-core:
+    build:
+      context: ./aizen-core
+      dockerfile: Dockerfile
+    container_name: aizen-core
+    ports:
+      - "8080:8080"
+    volumes:
+      - aizen-data:/home/aizen/.aizen
+    environment:
+      - AIZEN_HOME=/home/aizen/.aizen
+      - AIZEN_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aizen-net
+
+  aizen-dashboard:
+    build:
+      context: ./aizen-dashboard
+      dockerfile: Dockerfile
+    container_name: aizen-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - AIZEN_CORE_URL=http://aizen-core:8080
+      - AIZEN_WATCH_URL=http://aizen-watch:7710
+    depends_on:
+      aizen-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aizen-net
+
+  aizen-watch:
+    build:
+      context: ./aizen-watch
+      dockerfile: Dockerfile
+    container_name: aizen-watch
+    ports:
+      - "7710:7710"
+    volumes:
+      - aizen-watch-data:/home/aizen/.aizen-watch
+    environment:
+      - AIZEN_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7710/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aizen-net
+
+  aizen-kanban:
+    build:
+      context: ./aizen-kanban
+      dockerfile: Dockerfile
+    container_name: aizen-kanban
+    ports:
+      - "7720:7720"
+    volumes:
+      - aizen-kanban-data:/home/aizen/.aizen-kanban
+    environment:
+      - AIZEN_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7720/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aizen-net
+
+  aizen-orchestrate:
+    build:
+      context: ./aizen-orchestrate
+      dockerfile: Dockerfile
+    container_name: aizen-orchestrate
+    ports:
+      - "7730:7730"
+    volumes:
+      - aizen-orchestrate-data:/home/aizen/.aizen-orchestrate
+    environment:
+      - AIZEN_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7730/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aizen-net
+
+volumes:
+  aizen-data:
+  aizen-watch-data:
+  aizen-kanban-data:
+  aizen-orchestrate-data:
+
+networks:
+  aizen-net:
+    driver: bridge
