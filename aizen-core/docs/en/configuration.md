@@ -482,7 +482,7 @@ WeChat example:
         "account_id": "main",
         "callback_token": "wechat-callback-token",
         "encoding_aes_key": "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-        "app_id": "wx1234567890abcdef",
+        "app_id": "YOUR_WECHAT_APP_ID",
         "app_secret": "wechat-app-secret",
         "allow_from": ["openid_123"]
       }
