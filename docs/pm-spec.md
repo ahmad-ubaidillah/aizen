@@ -3,13 +3,13 @@
 **PM Agent** | Date: 2026-05-01
 **Target:** v0.1 "The Core"
 **Timeline:** 4-6 weeks
-**Goal:** Rebranded NullClaw core agent running with basic features from all three sources, plus Python skill bridge and basic dashboard.
+**Goal:** Rebranded Aizen core agent running with basic features from all three sources, plus Python skill bridge and basic dashboard.
 
 ---
 
 ## 0. Guiding Principles
 
-1. **Fork, don't rewrite.** Every Zig service starts as a verified fork of its NullClaw counterpart. Only rebranding changes are permitted in Phase 1.
+1. **Fork, don't rewrite.** Every Zig service starts as a verified fork of its Aizen counterpart. Only rebranding changes are permitted in Phase 1.
 2. **Rebrand is compile-time correct.** All renames must produce a binary that boots, serves requests on the correct port, and reads from `~/.aizen/` paths.
 3. **Smoke-test every service.** A service is "done" when its health endpoint returns 200 on its designated port after rebranding.
 4. **Python bridge is minimal but functional.** It must load a SKILL.md file, execute it, and return a result. No self-learning, no curator, no ranking yet.
@@ -30,7 +30,7 @@
 
 ## 1.1 Epic: Fork + Rebrand aizen-core
 
-**Goal:** Take nullclaw source, rename every identifier/path/string, produce a `aizen-core` binary that boots and passes all existing tests.
+**Goal:** Take aizen source, rename every identifier/path/string, produce a `aizen-core` binary that boots and passes all existing tests.
 
 ### Task 1.1.1 — Create aizen monorepo skeleton
 
@@ -51,7 +51,7 @@
 
 ---
 
-### Task 1.1.2 — Fork nullclaw into aizen-core with full rebrand
+### Task 1.1.2 — Fork aizen into aizen-core with full rebrand
 
 | Field | Value |
 |-------|-------|
@@ -59,15 +59,15 @@
 | Dependencies | Task 1.1.1 |
 | Risk | H |
 
-**Description:** Copy the entire nullclaw source tree into `aizen/aizen-core/`. Perform the global renames from architecture-design.md Section 7.2:
+**Description:** Copy the entire aizen source tree into `aizen/aizen-core/`. Perform the global renames from architecture-design.md Section 7.2:
 
-- `nullclaw` → `aizen` (all identifiers, comments, strings)
-- `NullClaw` → `Aizen` (PascalCase types, comments)
-- `nullclaw_` → `aizen_` (snake_case functions)
-- `nullclaw-` → `aizen-` (CLI commands, package names)
-- `~/.nullclaw/` → `~/.aizen/` (data paths)
-- `nullclaw.json` → `aizen.json` (config filenames)
-- `NULLCLAW_HOME` → `AIZEN_HOME` (environment variables)
+- `aizen` → `aizen` (all identifiers, comments, strings)
+- `Aizen` → `Aizen` (PascalCase types, comments)
+- `aizen_` → `aizen_` (snake_case functions)
+- `aizen-` → `aizen-` (CLI commands, package names)
+- `~/.aizen/` → `~/.aizen/` (data paths)
+- `aizen.json` → `aizen.json` (config filenames)
+- `AIZEN_HOME` → `AIZEN_HOME` (environment variables)
 - All port references verified to stay on `:8080`
 
 This includes:
@@ -83,25 +83,25 @@ This includes:
 - [ ] `cd aizen-core && zig build` compiles without errors
 - [ ] `zig build test` passes all 5,640+ existing tests
 - [ ] The produced binary is named `aizen-core` (or `aizen`)
-- [ ] `./aizen-core --help` shows "Aizen" branding, not "NullClaw"
+- [ ] `./aizen-core --help` shows "Aizen" branding, not "Aizen"
 - [ ] `./aizen-core` boots and listens on `:8080`
 - [ ] `curl http://localhost:8080/api/v1/healthz` returns 200
-- [ ] `~/.aizen/` is created on first run (not `~/.nullclaw/`)
+- [ ] `~/.aizen/` is created on first run (not `~/.aizen/`)
 - [ ] `aizen.json` is the default config filename
-- [ ] `grep -ri "nullclaw" aizen-core/src/` returns zero matches
-- [ ] `grep -ri "NullClaw" aizen-core/src/` returns zero matches (except possibly in license/attribution comments acknowledging origins)
+- [ ] `grep -ri "aizen" aizen-core/src/` returns zero matches
+- [ ] `grep -ri "Aizen" aizen-core/src/` returns zero matches (except possibly in license/attribution comments acknowledging origins)
 - [ ] All 50+ provider modules load correctly
 - [ ] All 19 channel adapters compile and are registered
 - [ ] All 35+ built-in tools are available via tool registry
 - [ ] Config migration: `AIZEN_HOME` env var takes precedence over `~/.aizen/` default
 
 **Risk Assessment:**
-- **HIGH risk** because nullclaw has ~230 source files and ~204K LOC. Automated find-replace may miss edge cases in strings, test fixtures, or embedded data.
+- **HIGH risk** because aizen has ~230 source files and ~204K LOC. Automated find-replace may miss edge cases in strings, test fixtures, or embedded data.
 - **Mitigation:** Write a rebranding script (`scripts/rebrand.sh`) that performs sed replacements in a deterministic order, then run the full test suite. Keep the script in the repo for audit. Do a manual review of the diff before committing.
 
 ---
 
-### Task 1.1.3 — Config migration script (nullclaw → aizen)
+### Task 1.1.3 — Config migration script (aizen → aizen)
 
 | Field | Value |
 |-------|-------|
@@ -109,17 +109,17 @@ This includes:
 | Dependencies | Task 1.1.2 |
 | Risk | M |
 
-**Description:** Create a `scripts/migrate-config.sh` script that handles migration from an existing nullclaw installation to aizen. This must:
+**Description:** Create a `scripts/migrate-config.sh` script that handles migration from an existing aizen installation to aizen. This must:
 
-1. Copy `~/.nullclaw/` → `~/.aizen/` preserving structure
-2. Rename `nullclaw.json` → `aizen.json` inside the config
+1. Copy `~/.aizen/` → `~/.aizen/` preserving structure
+2. Rename `aizen.json` → `aizen.json` inside the config
 3. Update any internal path references within the JSON config
-4. Migrate environment variables: if `NULLCLAW_HOME` is set, map it to `AIZEN_HOME`
+4. Migrate environment variables: if `AIZEN_HOME` is set, map it to `AIZEN_HOME`
 5. Preserve SQLite databases without modification (schema is unchanged)
 6. Log what was migrated and flag any manual-review items
 
 **Acceptance Criteria:**
-- [ ] `migrate-config.sh` runs without errors on a system with existing nullclaw data
+- [ ] `migrate-config.sh` runs without errors on a system with existing aizen data
 - [ ] After migration, `aizen-core` boots and reads the migrated config from `~/.aizen/`
 - [ ] SQLite databases are untouched (byte-identical)
 - [ ] Script produces a migration report: files copied, paths updated, env vars detected
@@ -129,7 +129,7 @@ This includes:
 
 **Risk Assessment:**
 - **MEDIUM risk** because config format differences or edge cases in user data may cause runtime failures.
-- **Mitigation:** The existing nullclaw config is JSON-based with a `from_json` bootstrap mechanism — we can validate the migrated config by booting aizen-core with it.
+- **Mitigation:** The existing aizen config is JSON-based with a `from_json` bootstrap mechanism — we can validate the migrated config by booting aizen-core with it.
 
 ---
 
@@ -159,9 +159,9 @@ This includes:
 
 ## 1.2 Epic: Fork + Rebrand aizen-dashboard
 
-**Goal:** Combine nullhub (Zig management hub) and nullclaw-chat-ui (Svelte 5 chat) into a single `aizen-dashboard` that serves both management and chat UI.
+**Goal:** Combine aizen-dashboard (Zig management hub) and aizen-chat-ui (Svelte 5 chat) into a single `aizen-dashboard` that serves both management and chat UI.
 
-### Task 1.2.1 — Fork nullhub into aizen-dashboard hub component
+### Task 1.2.1 — Fork aizen-dashboard into aizen-dashboard hub component
 
 | Field | Value |
 |-------|-------|
@@ -169,12 +169,12 @@ This includes:
 | Dependencies | Task 1.1.2 (needs running aizen-core to verify integration) |
 | Risk | M |
 
-**Description:** Copy nullhub source into `aizen/aizen-dashboard/src/hub/`. Perform global renames:
+**Description:** Copy aizen-dashboard source into `aizen/aizen-dashboard/src/hub/`. Perform global renames:
 
-- `nullhub` → `aizen-dashboard` (identifiers, strings)
-- `NullHub` → `AizenDashboard` (types)
-- `nullhub_` → `aizen_dashboard_` (functions)
-- `~/.nullhub/` → `~/.aizen/dashboard/` (paths)
+- `aizen-dashboard` → `aizen-dashboard` (identifiers, strings)
+- `AizenDashboard` → `AizenDashboard` (types)
+- `aizen-dashboard_` → `aizen_dashboard_` (functions)
+- `~/.aizen-dashboard/` → `~/.aizen/dashboard/` (paths)
 - Port stays on `:3000`
 
 Update the hub's references to point to aizen-core service names and ports:
@@ -189,14 +189,14 @@ Update the hub's references to point to aizen-core service names and ports:
 - [ ] `curl http://localhost:3000/api/instances` returns 200 (may be empty list)
 - [ ] `curl http://localhost:3000/api/config` returns 200
 - [ ] `curl http://localhost:3000/api/logs` returns 200 (SSE stream)
-- [ ] `grep -ri "nullhub" aizen-dashboard/src/hub/` returns zero matches
+- [ ] `grep -ri "aizen-dashboard" aizen-dashboard/src/hub/` returns zero matches
 - [ ] Hub can start/stop a local aizen-core instance via process supervision
 - [ ] mDNS discovery works (detects aizen-core on local network)
 - [ ] Config editor UI loads and can modify aizen.json
 
 ---
 
-### Task 1.2.2 — Fork nullclaw-chat-ui into aizen-dashboard chat component
+### Task 1.2.2 — Fork aizen-chat-ui into aizen-dashboard chat component
 
 | Field | Value |
 |-------|-------|
@@ -204,10 +204,10 @@ Update the hub's references to point to aizen-core service names and ports:
 | Dependencies | Task 1.2.1 |
 | Risk | M |
 
-**Description:** Copy nullclaw-chat-ui (Svelte 5) source into `aizen/aizen-dashboard/src/ui/`. Perform rebranding:
+**Description:** Copy aizen-chat-ui (Svelte 5) source into `aizen/aizen-dashboard/src/ui/`. Perform rebranding:
 
-- `nullclaw-chat-ui` → `aizen-dashboard` (package name)
-- `NullClaw` → `Aizen` in all UI text, titles, headers
+- `aizen-chat-ui` → `aizen-dashboard` (package name)
+- `Aizen` → `Aizen` in all UI text, titles, headers
 - WebSocket connection URLs updated to point to aizen-core (`:8080`)
 - WebChannel E2E pairing references updated
 - Color scheme updated to Aizen branding (Cyan #58A6FF primary, Dark #0D1117 background)
@@ -220,13 +220,13 @@ Integrate the chat UI as a route or component within the dashboard SvelteKit app
 - [ ] Chat UI renders at `http://localhost:3000/` or a dedicated `/chat` route
 - [ ] WebSocket connection to aizen-core on `:8080` works
 - [ ] Sending a message in the chat UI receives a response from aizen-core
-- [ ] All "NullClaw" references in UI text replaced with "Aizen"
+- [ ] All "Aizen" references in UI text replaced with "Aizen"
 - [ ] Color scheme matches Aizen brand spec (Cyan #58A6FF / Dark #0D1117)
 - [ ] PIN pairing flow for WebChannel E2E encryption still works
 - [ ] Tool timeline rendering still functions
 - [ ] Session restore works across browser refresh
 - [ ] Theme persistence works (dark/light mode)
-- [ ] `grep -ri "nullclaw" aizen-dashboard/src/ui/` returns zero matches (excluding package-lock transitive deps)
+- [ ] `grep -ri "aizen" aizen-dashboard/src/ui/` returns zero matches (excluding package-lock transitive deps)
 
 ---
 
@@ -256,9 +256,9 @@ Integrate the chat UI as a route or component within the dashboard SvelteKit app
 
 ## 1.3 Epic: Fork + Rebrand aizen-watch
 
-**Goal:** Rebrand nullwatch as aizen-watch, verified working observability service.
+**Goal:** Rebrand aizen-watch as aizen-watch, verified working observability service.
 
-### Task 1.3.1 — Fork nullwatch into aizen-watch
+### Task 1.3.1 — Fork aizen-watch into aizen-watch
 
 | Field | Value |
 |-------|-------|
@@ -266,18 +266,18 @@ Integrate the chat UI as a route or component within the dashboard SvelteKit app
 | Dependencies | Task 1.1.2 (for aizen-core to emit spans) |
 | Risk | L |
 
-**Description:** Copy nullwatch source into `aizen/aizen-watch/`. Perform global renames:
+**Description:** Copy aizen-watch source into `aizen/aizen-watch/`. Perform global renames:
 
-- `nullwatch` → `aizen-watch` / `aizen_watch` (identifiers, strings)
-- `NullWatch` → `AizenWatch` (types)
-- `~/.nullwatch/` → `~/.aizen/watch/` (data paths)
+- `aizen-watch` → `aizen-watch` / `aizen_watch` (identifiers, strings)
+- `AizenWatch` → `AizenWatch` (types)
+- `~/.aizen-watch/` → `~/.aizen/watch/` (data paths)
 - Port stays on `:7710`
 
 Make aizen-core aware of `aizen-watch` endpoint for span/eval/trace export (update its telemetry config).
 
 **Acceptance Criteria:**
 - [ ] `cd aizen-watch && zig build` compiles without errors
-- [ ] `zig build test` passes all existing nullwatch tests
+- [ ] `zig build test` passes all existing aizen-watch tests
 - [ ] aizen-watch boots on `:7710`
 - [ ] `curl http://localhost:7710/v1/spans` returns 200
 - [ ] `curl http://localhost:7710/v1/evals` returns 200
@@ -285,15 +285,15 @@ Make aizen-core aware of `aizen-watch` endpoint for span/eval/trace export (upda
 - [ ] `curl http://localhost:7710/otlp/v1/traces` accepts OTLP JSON
 - [ ] aizen-core can be configured to export traces to `localhost:7710`
 - [ ] Data persists to `~/.aizen/watch/data/` as JSONL
-- [ ] `grep -ri "nullwatch" aizen-watch/src/` returns zero matches
+- [ ] `grep -ri "aizen-watch" aizen-watch/src/` returns zero matches
 
 ---
 
 ## 1.4 Epic: Fork + Rebrand aizen-kanban
 
-**Goal:** Rebrand nulltickets as aizen-kanban, verified working task tracking service.
+**Goal:** Rebrand aizen-kanban as aizen-kanban, verified working task tracking service.
 
-### Task 1.4.1 — Fork nulltickets into aizen-kanban
+### Task 1.4.1 — Fork aizen-kanban into aizen-kanban
 
 | Field | Value |
 |-------|-------|
@@ -301,18 +301,18 @@ Make aizen-core aware of `aizen-watch` endpoint for span/eval/trace export (upda
 | Dependencies | Task 1.1.2 |
 | Risk | L |
 
-**Description:** Copy nulltickets source into `aizen/aizen-kanban/`. Perform global renames:
+**Description:** Copy aizen-kanban source into `aizen/aizen-kanban/`. Perform global renames:
 
-- `nulltickets` → `aizen-kanban` / `aizen_kanban` (identifiers, strings)
-- `NullTickets` → `AizenKanban` (types)
-- `~/.nulltickets/` → `~/.aizen/kanban/` (data paths)
+- `aizen-kanban` → `aizen-kanban` / `aizen_kanban` (identifiers, strings)
+- `AizenKanban` → `AizenKanban` (types)
+- `~/.aizen-kanban/` → `~/.aizen/kanban/` (data paths)
 - Port stays on `:7720`
 
-Update pipeline stage names if they reference "nulltickets" in any FSM states.
+Update pipeline stage names if they reference "aizen-kanban" in any FSM states.
 
 **Acceptance Criteria:**
 - [ ] `cd aizen-kanban && zig build` compiles without errors
-- [ ] `zig build test` passes all existing nulltickets tests
+- [ ] `zig build test` passes all existing aizen-kanban tests
 - [ ] aizen-kanban boots on `:7720`
 - [ ] `curl http://localhost:7720/v1/tasks` returns 200
 - [ ] `curl http://localhost:7720/v1/pipelines` returns 200
@@ -322,15 +322,15 @@ Update pipeline stage names if they reference "nulltickets" in any FSM states.
 - [ ] Lease-based claiming with heartbeat works
 - [ ] FTS5 full-text search on KV store works
 - [ ] SQLite database created at `~/.aizen/kanban/kanban.db`
-- [ ] `grep -ri "nulltickets" aizen-kanban/src/` returns zero matches
+- [ ] `grep -ri "aizen-kanban" aizen-kanban/src/` returns zero matches
 
 ---
 
 ## 1.5 Epic: Fork + Rebrand aizen-orchestrate
 
-**Goal:** Rebrand nullboiler as aizen-orchestrate, verified working workflow engine.
+**Goal:** Rebrand aizen-orchestrate as aizen-orchestrate, verified working workflow engine.
 
-### Task 1.5.1 — Fork nullboiler into aizen-orchestrate
+### Task 1.5.1 — Fork aizen-orchestrate into aizen-orchestrate
 
 | Field | Value |
 |-------|-------|
@@ -338,16 +338,16 @@ Update pipeline stage names if they reference "nulltickets" in any FSM states.
 | Dependencies | Task 1.1.2 |
 | Risk | L |
 
-**Description:** Copy nullboiler source into `aizen/aizen-orchestrate/`. Perform global renames:
+**Description:** Copy aizen-orchestrate source into `aizen/aizen-orchestrate/`. Perform global renames:
 
-- `nullboiler` → `aizen-orchestrate` / `aizen_orchestrate` (identifiers, strings)
-- `NullBoiler` → `AizenOrchestrate` (types)
-- `~/.nullboiler/` → `~/.aizen/orchestrate/` (data paths)
+- `aizen-orchestrate` → `aizen-orchestrate` / `aizen_orchestrate` (identifiers, strings)
+- `AizenOrchestration` → `AizenOrchestrate` (types)
+- `~/.aizen-orchestrate/` → `~/.aizen/orchestrate/` (data paths)
 - Port stays on `:7730`
 
 **Acceptance Criteria:**
 - [ ] `cd aizen-orchestrate && zig build` compiles without errors
-- [ ] `zig build test` passes all existing nullboiler tests
+- [ ] `zig build test` passes all existing aizen-orchestrate tests
 - [ ] aizen-orchestrate boots on `:7730`
 - [ ] `curl http://localhost:7730/v1/workflows` returns 200
 - [ ] `curl http://localhost:7730/v1/runs` returns 200
@@ -357,7 +357,7 @@ Update pipeline stage names if they reference "nulltickets" in any FSM states.
 - [ ] SSE streaming of workflow progress works
 - [ ] Checkpoint/replay/fork works
 - [ ] SQLite database created at `~/.aizen/orchestrate/orchestrate.db`
-- [ ] `grep -ri "nullboiler" aizen-orchestrate/src/` returns zero matches
+- [ ] `grep -ri "aizen-orchestrate" aizen-orchestrate/src/` returns zero matches
 
 ---
 
@@ -662,16 +662,16 @@ Critical Path: 1.1.1 → 1.1.2 → 1.2.1 → 1.2.2 → 1.7.1 → 1.7.2
 
 | ID | Risk | Impact | Likelihood | Mitigation |
 |----|------|--------|------------|------------|
-| R1 | NullClaw rebranding misses embedded strings/fixtures | Tests fail at runtime | Medium | Write deterministic rebrand script; run full test suite; grep audit |
+| R1 | Aizen rebranding misses embedded strings/fixtures | Tests fail at runtime | Medium | Write deterministic rebrand script; run full test suite; grep audit |
 | R2 | Zig↔Python C ABI FFI crashes or GIL issues | Skill bridge unusable | High | Fall back to subprocess IPC for Phase 1; C ABI targeted for Phase 2 |
-| R3 | Dashboard Svelte integration breaks existing nullhub or chat-ui functionality | UI doesn't render | Medium | Keep hub and chat as separate SvelteKit routes, minimal integration |
-| R4 | nullclaw build system has hardcoded paths or names | Build fails after rename | Medium | Carefully audit `build.zig` and `build.zig.zon` for hardcoded references |
-| R5 | Config format incompatibilities between nullclaw versions | Config migration breaks | Low | Migration script validates before writing; offers `--dry-run` mode |
+| R3 | Dashboard Svelte integration breaks existing aizen-dashboard or chat-ui functionality | UI doesn't render | Medium | Keep hub and chat as separate SvelteKit routes, minimal integration |
+| R4 | aizen build system has hardcoded paths or names | Build fails after rename | Medium | Carefully audit `build.zig` and `build.zig.zon` for hardcoded references |
+| R5 | Config format incompatibilities between aizen versions | Config migration breaks | Low | Migration script validates before writing; offers `--dry-run` mode |
 | R6 | Port conflicts on developer machines | Services don't start | Low | All ports configurable via env vars; defaults match architecture doc |
 | R7 | Zig 0.16 breaking changes during development | Build breaks | Medium | Pin exact Zig version in CI; document tested version |
 | R8 | Python 3.11+ not available on target platforms | Skill bridge won't install | Low | Document Python requirement; consider Python 3.10 support for wider reach |
 | R9 | SQLite schema incompatibility after rebrand | Data migration fails | Low | DB schema is unchanged; only paths and filenames change |
-| R10 | Upstream nullclaw continues to ship fixes during our fork | Merge conflicts on rebase | Medium | Maintain a clean `upstream/` remote and rebase regularly before Phase 1 freeze |
+| R10 | Upstream aizen continues to ship fixes during our fork | Merge conflicts on rebase | Medium | Maintain a clean `upstream/` remote and rebase regularly before Phase 1 freeze |
 
 ---
 
@@ -744,7 +744,7 @@ The following features from the architecture design are explicitly **NOT** in Ph
 - Sub-agent permission grants (Phase 2)
 - Self-learning skills (Wilson score, ERL, STEM) (Phase 2)
 - Tree-sitter code indexing (Phase 2/3)
-- Config migration system (diff+apply) (Phase 3) — our Phase 1 only does nullclaw→aizen path migration
+- Config migration system (diff+apply) (Phase 3) — our Phase 1 only does aizen→aizen path migration
 - TUI dashboard (Phase 3)
 - A2A protocol with IBCT tokens (Phase 3)
 - ACP server (Phase 3)
@@ -761,10 +761,10 @@ The following features from the architecture design are explicitly **NOT** in Ph
 | Date | Decision | Rationale | Alternatives Considered |
 |------|----------|-----------|------------------------|
 | 2026-05-01 | Use subprocess IPC for skill bridge in Phase 1 | Lower risk than C ABI embedding; isolates Python crashes | C ABI embedding (deferred to Phase 2), HTTP API (higher latency) |
-| 2026-05-01 | Keep all 5 Zig services as separate binaries | Matches nullclaw ecosystem architecture; each can be deployed independently | Monolithic single binary (too coupled), microservices with sidecars (overkill) |
+| 2026-05-01 | Keep all 5 Zig services as separate binaries | Matches aizen ecosystem architecture; each can be deployed independently | Monolithic single binary (too coupled), microservices with sidecars (overkill) |
 | 2026-05-01 | Rebrand via automated script, not manual | 204K LOC makes manual rename error-prone; script is auditable and repeatable | Manual find-replace (error-prone), IDE refactoring (Zig IDE support is limited) |
-| 2026-05-01 | Combine nullhub + nullclaw-chat-ui into single dashboard | Reduces operational complexity; both serve the same user at the same port | Separate services (more infra to manage), iframe embedding ( insecurity) |
-| 2026-05-01 | Pin Zig 0.16.0 exact version | NullClaw is tested on 0.16.0; Zig is pre-1.0 with frequent breaking changes | Latest Zig (risk of breakage), Zig master (too unstable) |
+| 2026-05-01 | Combine aizen-dashboard + aizen-chat-ui into single dashboard | Reduces operational complexity; both serve the same user at the same port | Separate services (more infra to manage), iframe embedding ( insecurity) |
+| 2026-05-01 | Pin Zig 0.16.0 exact version | Aizen is tested on 0.16.0; Zig is pre-1.0 with frequent breaking changes | Latest Zig (risk of breakage), Zig master (too unstable) |
 
 ---
 
@@ -774,7 +774,7 @@ The following features from the architecture design are explicitly **NOT** in Ph
 |---|----------|-------|--------|-------------------|
 | 1 | Should aizen-core be a single binary or support dynamic plugin loading for channels/tools? | Architect | Open | Sprint 2 |
 | 2 | What is the minimum Python version for aizen-skill-bridge? (3.11 has tomllib, 3.10 doesn't) | PM | Open | Sprint 1 |
-| 3 | How do we handle upstream nullclaw patches during Phase 1? Rebase or cherry-pick? | Lead Engineer | Open | Sprint 1 |
+| 3 | How do we handle upstream aizen patches during Phase 1? Rebase or cherry-pick? | Lead Engineer | Open | Sprint 1 |
 | 4 | Should the dashboard's management UI and chat UI share authentication state? | Architect | Open | Sprint 3 |
 | 5 | What is the CI/CD target? GitHub Actions only, or also GitLab/Gitea? | DevOps | Open | Sprint 1 |
-| 6 | Should we vendor nullclaw as a git subtree or git submodule? | Lead Engineer | Open | Sprint 1 |
+| 6 | Should we vendor aizen as a git subtree or git submodule? | Lead Engineer | Open | Sprint 1 |

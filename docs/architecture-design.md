@@ -2,7 +2,7 @@
 
 **Architect Agent** | Date: 2026-05-01
 **Tagline:** Execute with Zen
-**Base:** NullClaw ecosystem (Zig) + Zeph (Rust) intelligence + Hermes (Python) skill breadth
+**Base:** Aizen ecosystem (Zig) + Zeph (Rust) intelligence + Hermes (Python) skill breadth
 
 ---
 
@@ -10,9 +10,9 @@
 
 ```
 aizen/
-├── aizen-core/              # Core agent runtime (Zig) — forked from nullclaw
+├── aizen-core/              # Core agent runtime (Zig) — forked from aizen
 │   ├── src/
-│   │   ├── aizen.zig        # Main entry (renamed from nullclaw.zig)
+│   │   ├── aizen.zig        # Main entry (renamed from aizen.zig)
 │   │   ├── agent/           # Agent loop, provider routing
 │   │   ├── channels/        # 19+ messaging adapters
 │   │   ├── memory/          # SYNAPSE graph memory (new) + existing engines
@@ -24,26 +24,26 @@ aizen/
 │   │   └── config/          # Config migration system (new)
 │   ├── build.zig
 │   └── build.zig.zon
-├── aizen-dashboard/         # Management hub + chat UI — forked from nullhub + nullclaw-chat-ui
+├── aizen-dashboard/         # Management hub + chat UI — forked from aizen-dashboard + aizen-chat-ui
 │   ├── src/
 │   │   ├── hub/             # Process supervision, config, orchestration (Zig)
 │   │   └── ui/              # Svelte 5 web dashboard + chat
 │   └── package.json
-├── aizen-watch/             # Observability — forked from nullwatch
+├── aizen-watch/             # Observability — forked from aizen-watch
 │   ├── src/
 │   │   ├── span.zig         # Span ingest
 │   │   ├── eval.zig         # Eval scoring
 │   │   ├── otlp.zig         # OTLP ingest
 │   │   └── api.zig           # HTTP API :7710
 │   └── build.zig
-├── aizen-kanban/            # Task tracking — forked from nulltickets
+├── aizen-kanban/            # Task tracking — forked from aizen-kanban
 │   ├── src/
 │   │   ├── pipeline.zig     # Pipeline FSM
 │   │   ├── lease.zig        # Lease-based claiming
 │   │   ├── kv.zig           # FTS5 KV store
 │   │   └── api.zig           # 35+ REST endpoints
 │   └── build.zig
-├── aizen-orchestrate/       # Workflow engine — forked from nullboiler
+├── aizen-orchestrate/       # Workflow engine — forked from aizen-orchestrate
 │   ├── src/
 │   │   ├── workflow.zig     # Graph engine (7 node types)
 │   │   ├── reducer.zig      # 7 reducer types
@@ -73,7 +73,7 @@ aizen/
 
 **Zig for core runtime** because:
 - 678 KB binary, <2ms startup, ~1MB RAM
-- Vtable plugin system from NullClaw proven at scale (5,640+ tests)
+- Vtable plugin system from Aizen proven at scale (5,640+ tests)
 - C ABI interop for Python embedding
 - Comptime configuration model fits agent config patterns
 - Single static binary eliminates dependency hell
@@ -84,7 +84,7 @@ aizen/
 - agentskills.io compatibility
 - Rapid prototyping; skill authors don't need Zig
 
-### 2.2 Vtable Plugin System (from NullClaw)
+### 2.2 Vtable Plugin System (from Aizen)
 
 All extension points are vtable interfaces:
 
@@ -134,7 +134,7 @@ All aizen-* services communicate via:
 - **HTTP/REST** for synchronous operations (CRUD, queries)
 - **SSE (Server-Sent Events)** for streaming (workflow progress, logs, chat)
 - **SQLite** as embedded database (each service has its own)
-- **mDNS** for auto-discovery (from NullHub)
+- **mDNS** for auto-discovery (from AizenDashboard)
 
 ---
 
@@ -145,7 +145,7 @@ All aizen-* services communicate via:
 | Responsibility | Implementation |
 |---|---|
 | Provider routing | Vtable providers (50+) + complexity triage (Thompson Sampling from Zeph) |
-| Channel adapters | 19+ channels from NullClaw, plus Hermes extras (Home Assistant, Feishu, SMS) |
+| Channel adapters | 19+ channels from Aizen, plus Hermes extras (Home Assistant, Feishu, SMS) |
 | Tool registry | 35+ built-in tools + Python skill bridge for Hermes skills |
 | Memory | SYNAPSE graph memory (primary) + SQLite (fallback) + Qdrant (optional) |
 | Security | 8-layer sanitization + 4 sandbox backends + age-encrypted vault |
@@ -165,7 +165,7 @@ All aizen-* services communicate via:
 
 | Responsibility | Implementation |
 |---|---|
-| Install wizard | Guided setup (from NullHub) |
+| Install wizard | Guided setup (from AizenDashboard) |
 | Process supervision | Start/stop/crash recovery/backoff for aizen-core |
 | Config management | Structured editors + raw JSON |
 | Log streaming | Tail + SSE |
@@ -252,7 +252,7 @@ SYNAPSE Graph Memory
     └── SleepGate (RL-based) prevents noise from polluting long-term memory
 ```
 
-### 4.2 Storage Backends (from NullClaw + Zeph)
+### 4.2 Storage Backends (from Aizen + Zeph)
 
 | Backend | Use Case | Priority |
 |---|---|---|
@@ -311,7 +311,7 @@ Age-Encrypted Vault
 └── TTL-bounded secret delegation for sub-agents
 ```
 
-### 5.3 Sandbox (from NullClaw)
+### 5.3 Sandbox (from Aizen)
 
 ```
 4 Sandbox Backends:
@@ -394,46 +394,46 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 
 | Original | New Name | Description |
 |---|---|---|
-| nullclaw | aizen-core | Core agent runtime |
-| nullclaw-chat-ui | aizen-dashboard (chat component) | Web chat interface |
-| nullhub | aizen-dashboard (hub component) | Management dashboard |
-| nullwatch | aizen-watch | Observability service |
-| nulltickets | aizen-kanban | Task tracking service |
-| nullboiler | aizen-orchestrate | Workflow orchestration |
+| aizen | aizen-core | Core agent runtime |
+| aizen-chat-ui | aizen-dashboard (chat component) | Web chat interface |
+| aizen-dashboard | aizen-dashboard (hub component) | Management dashboard |
+| aizen-watch | aizen-watch | Observability service |
+| aizen-kanban | aizen-kanban | Task tracking service |
+| aizen-orchestrate | aizen-orchestrate | Workflow orchestration |
 
 ### 7.2 Global Renames (Zig source)
 
 | Pattern | Replace |
 |---|---|
-| `nullclaw` → `aizen` | All identifiers, comments, strings |
-| `NullClaw` → `Aizen` | PascalCase types, comments |
-| `nullclaw_` → `aizen_` | Snake_case functions |
-| `nullclaw-` → `aizen-` | CLI commands, package names |
-| `nullhub` → `aizen-dashboard` | Hub service |
-| `nullwatch` → `aizen-watch` | Watch service |
-| `nulltickets` → `aizen-kanban` | Tickets service |
-| `nullboiler` → `aizen-orchestrate` | Boiler service |
-| `NullHub` → `AizenDashboard` | Hub types |
-| `NullWatch` → `AizenWatch` | Watch types |
-| `NullTickets` → `AizenKanban` | Tickets types |
-| `NullBoiler` → `AizenOrchestrate` | Boiler types |
+| `aizen` → `aizen` | All identifiers, comments, strings |
+| `Aizen` → `Aizen` | PascalCase types, comments |
+| `aizen_` → `aizen_` | Snake_case functions |
+| `aizen-` → `aizen-` | CLI commands, package names |
+| `aizen-dashboard` → `aizen-dashboard` | Hub service |
+| `aizen-watch` → `aizen-watch` | Watch service |
+| `aizen-kanban` → `aizen-kanban` | Tickets service |
+| `aizen-orchestrate` → `aizen-orchestrate` | Boiler service |
+| `AizenDashboard` → `AizenDashboard` | Hub types |
+| `AizenWatch` → `AizenWatch` | Watch types |
+| `AizenKanban` → `AizenKanban` | Tickets types |
+| `AizenOrchestration` → `AizenOrchestrate` | Boiler types |
 
 ### 7.3 Config and Data Paths
 
 | Original | New |
 |---|---|
-| `~/.nullclaw/` | `~/.aizen/` |
-| `~/.nullhub/` | `~/.aizen/dashboard/` |
-| `~/.nullwatch/` | `~/.aizen/watch/` |
-| `~/.nulltickets/` | `~/.aizen/kanban/` |
-| `~/.nullboiler/` | `~/.aizen/orchestrate/` |
-| `nullclaw.json` | `aizen.json` |
-| `NULLCLAW_HOME` | `AIZEN_HOME` |
-| `:8080` (nullclaw) | `:8080` (aizen-core) |
-| `:3000` (nullhub) | `:3000` (aizen-dashboard) |
-| `:7710` (nullwatch) | `:7710` (aizen-watch) |
-| `:7720` (nulltickets) | `:7720` (aizen-kanban) |
-| `:7730` (nullboiler) | `:7730` (aizen-orchestrate) |
+| `~/.aizen/` | `~/.aizen/` |
+| `~/.aizen-dashboard/` | `~/.aizen/dashboard/` |
+| `~/.aizen-watch/` | `~/.aizen/watch/` |
+| `~/.aizen-kanban/` | `~/.aizen/kanban/` |
+| `~/.aizen-orchestrate/` | `~/.aizen/orchestrate/` |
+| `aizen.json` | `aizen.json` |
+| `AIZEN_HOME` | `AIZEN_HOME` |
+| `:8080` (aizen) | `:8080` (aizen-core) |
+| `:3000` (aizen-dashboard) | `:3000` (aizen-dashboard) |
+| `:7710` (aizen-watch) | `:7710` (aizen-watch) |
+| `:7720` (aizen-kanban) | `:7720` (aizen-kanban) |
+| `:7730` (aizen-orchestrate) | `:7730` (aizen-orchestrate) |
 
 ### 7.4 Branding Assets
 
@@ -480,8 +480,8 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 | Component | Location | Description |
 |---|---|---|
 | Python skill bridge | `aizen-skill-bridge/` | Subprocess isolation, hot-reload, skill discovery |
-| WebChannel E2E | `aizen-dashboard/src/ui/` | Already from NullClaw |
-| mDNS discovery | `aizen-dashboard/src/hub/discovery.zig` | Already from NullHub |
+| WebChannel E2E | `aizen-dashboard/src/ui/` | Already from Aizen |
+| mDNS discovery | `aizen-dashboard/src/hub/discovery.zig` | Already from AizenDashboard |
 
 ---
 
@@ -489,21 +489,21 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 
 ### Phase 1: MVP (v0.1) — "The Core"
 
-**Goal:** Rebranded NullClaw core agent running with basic features from all three sources.
+**Goal:** Rebranded Aizen core agent running with basic features from all three sources.
 
 | Feature | Source | Status |
 |---|---|---|
-| Core agent runtime | NullClaw | Fork + rebrand |
-| 19 messaging channels | NullClaw | Direct |
-| 35+ tools | NullClaw | Direct |
-| Vtable plugin system | NullClaw | Direct |
-| 4 sandbox backends | NullClaw | Direct |
-| SQLite memory engine | NullClaw | Direct |
-| WebChannel E2E encryption | NullClaw | Direct |
-| Rebranding nullclaw→aizen | New | Full rename |
+| Core agent runtime | Aizen | Fork + rebrand |
+| 19 messaging channels | Aizen | Direct |
+| 35+ tools | Aizen | Direct |
+| Vtable plugin system | Aizen | Direct |
+| 4 sandbox backends | Aizen | Direct |
+| SQLite memory engine | Aizen | Direct |
+| WebChannel E2E encryption | Aizen | Direct |
+| Rebranding aizen→aizen | New | Full rename |
 | Python skill bridge | New (from Hermes pattern) | Minimal: SKILL.md loader + executor |
 | Config paths ~/.aizen/ | New | Migration script |
-| Dashboard (basic) | NullClaw | Rebrand nullhub→aizen-dashboard |
+| Dashboard (basic) | Aizen | Rebrand aizen-dashboard→aizen-dashboard |
 
 **Timeline:** 4-6 weeks
 
@@ -524,8 +524,8 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 | Sub-agent permission grants | Zeph | Medium — permission model |
 | Hermes skill categories (25+) | Hermes | Low — Python skill files |
 | Tree-sitter code indexing | Zeph | High — Zig FFI to tree-sitter |
-| Watch service | NullClaw | Rebrand nullwatch→aizen-watch |
-| Kanban service | NullClaw | Rebrand nulltickets→aizen-kanban |
+| Watch service | Aizen | Rebrand aizen-watch→aizen-watch |
+| Kanban service | Aizen | Rebrand aizen-kanban→aizen-kanban |
 
 **Timeline:** 8-12 weeks
 
@@ -535,9 +535,9 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 
 | Feature | Source | Effort |
 |---|---|---|
-| Workflow engine (7 node types) | NullClaw | Rebrand nullboiler→aizen-orchestrate |
-| Orchestration UI | NullHub | Port to aizen-dashboard |
-| Dashboard chat UI | NullClaw | Rebrand nullclaw-chat-ui |
+| Workflow engine (7 node types) | Aizen | Rebrand aizen-orchestrate→aizen-orchestrate |
+| Orchestration UI | AizenDashboard | Port to aizen-dashboard |
+| Dashboard chat UI | Aizen | Rebrand aizen-chat-ui |
 | Session search (FTS5+LLM) | Hermes | Medium — in Zig |
 | Context file system | Hermes | Low — SOUL.md/AGENTS.md loader |
 | Credential pool | Hermes | Medium — multi-key load balancing |
@@ -546,9 +546,9 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 | ACP server | Zeph | Medium — stdio/HTTP+SSE/WS |
 | Config migration system | Zeph | Low — diff+apply |
 | TUI dashboard | Zeph + Hermes | High — ratatui + Ink hybrid |
-| OTA updates | NullClaw | Direct |
-| Cross-compilation | NullClaw | ARM, x86, RISC-V |
-| Hardware peripherals | NullClaw | Arduino, STM32, RPi |
+| OTA updates | Aizen | Direct |
+| Cross-compilation | Aizen | ARM, x86, RISC-V |
+| Hardware peripherals | Aizen | Arduino, STM32, RPi |
 | Self-experimentation | Zeph | Low — grid sweep tuning |
 | Document RAG (PDF/md) | Zeph | Medium — PDF parser + Qdrant |
 
@@ -560,22 +560,22 @@ Loaded by `aizen-skill-bridge` Python runtime, executed in sandboxed subprocess.
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| Core runtime | Zig 0.16+ | NullClaw's proven minimal footprint, vtable architecture, C interop |
+| Core runtime | Zig 0.16+ | Aizen's proven minimal footprint, vtable architecture, C interop |
 | Skill runtime | Python 3.11+ | Hermes skill ecosystem compatibility, ML library availability |
 | Skill bridge interface | C ABI | Zig↔Python FFI via cabi, zero-copy where possible |
-| Dashboard UI | Svelte 5 + Runes | NullClaw-chat-ui already uses it, reactive by default |
+| Dashboard UI | Svelte 5 + Runes | Aizen-chat-ui already uses it, reactive by default |
 | Primary database | SQLite | Embedded, zero-config, always available, FTS5 support |
 | Vector database | Qdrant (optional) | SYNAPSE full features need it; graceful degradation to SQLite |
 | Graph database | SQLite property graph | APEX-MEM implementation on SQLite, portable |
 | Object storage | Local filesystem | No cloud dependency |
-| Service discovery | mDNS/Bonjour/Avahi | Auto-discovery on local network (from NullHub) |
+| Service discovery | mDNS/Bonjour/Avahi | Auto-discovery on local network (from AizenDashboard) |
 | Inter-service API | HTTP/REST + SSE | Simple, proven, curl-testable |
 | Inter-service streaming | SSE (Server-Sent Events) | Unidirectional real-time, simpler than WebSocket |
-| Encryption | age + X25519 + ChaCha20-Poly1305 | Zeph's vault + NullClaw's WebChannel combined |
+| Encryption | age + X25519 + ChaCha20-Poly1305 | Zeph's vault + Aizen's WebChannel combined |
 | Containerization | Docker (optional) | Not required (single binary), but supported for sandbox |
 | CI | GitHub Actions | Standard, free for open source |
 | Package format | Single static binary per service | Each aizen-* service is one binary |
-| Config format | JSON (from NullClaw) | Simpler than TOML/YAML for programmatic manipulation |
+| Config format | JSON (from Aizen) | Simpler than TOML/YAML for programmatic manipulation |
 
 ---
 

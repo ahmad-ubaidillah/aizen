@@ -3,7 +3,7 @@
 **Execute with Zen.**
 
 Aizen is a Zig-first autonomous AI agent runtime that combines:
-- **NullClaw's** extreme minimalism and vtable plugin architecture (678KB binary, 1MB RAM, <2ms boot)
+- **Aizen's** extreme minimalism and vtable plugin architecture (678KB binary, 1MB RAM, <2ms boot)
 - **Zeph's** intelligence features (SYNAPSE graph memory, 8-layer security, self-learning skills)
 - **Hermes's** skill breadth (25+ categories, 20+ platforms, autonomous skill creation)
 
