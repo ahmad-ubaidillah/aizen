@@ -1,0 +1,333 @@
+const std = @import("std");
+const std_compat = @import("compat");
+const builtin = @import("builtin");
+
+/// Directory resolution for all paths under `~/.aizen-dashboard/`.
+///
+/// Layout:
+/// ```
+/// ~/.aizen-dashboard/
+/// ├── config.json
+/// ├── state.json
+/// ├── manifests/{component}@{version}.json
+/// ├── bin/{component}-{version}
+/// ├── instances/{component}/{name}/
+/// │   ├── instance.json
+/// │   ├── config.json
+/// │   ├── data/
+/// │   └── logs/
+/// ├── ui/{module}@{version}/
+/// └── cache/downloads/
+/// ```
+pub const Paths = struct {
+    root: []const u8,
+
+    /// Initialize a Paths struct. If `custom_root` is null, resolves from
+    /// the HOME environment variable (producing `$HOME/.aizen-dashboard`).
+    /// The returned root string is owned by the allocator.
+    pub fn init(allocator: std.mem.Allocator, custom_root: ?[]const u8) !Paths {
+        if (custom_root) |cr| {
+            return .{ .root = try allocator.dupe(u8, cr) };
+        }
+        const home = try getHomeDirOwned(allocator);
+        defer allocator.free(home);
+        const root = try std.fs.path.join(allocator, &.{ home, ".aizen-dashboard" });
+        return .{ .root = root };
+    }
+
+    /// Free the root string.
+    pub fn deinit(self: *Paths, allocator: std.mem.Allocator) void {
+        allocator.free(self.root);
+        self.* = undefined;
+    }
+
+    // ── Singleton paths ──────────────────────────────────────────────
+
+    /// `{root}/config.json`
+    pub fn config(self: Paths, allocator: std.mem.Allocator) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "config.json" });
+    }
+
+    /// `{root}/state.json`
+    pub fn state(self: Paths, allocator: std.mem.Allocator) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "state.json" });
+    }
+
+    // ── Component paths ──────────────────────────────────────────────
+
+    /// `{root}/manifests/{component}@{version}.json`
+    pub fn manifest(self: Paths, allocator: std.mem.Allocator, component: []const u8, version: []const u8) ![]const u8 {
+        const filename = try std.fmt.allocPrint(allocator, "{s}@{s}.json", .{ component, version });
+        defer allocator.free(filename);
+        return std.fs.path.join(allocator, &.{ self.root, "manifests", filename });
+    }
+
+    /// `{root}/bin/{component}-{version}` (or `.exe` on Windows)
+    pub fn binary(self: Paths, allocator: std.mem.Allocator, component: []const u8, version: []const u8) ![]const u8 {
+        const filename = if (builtin.os.tag == .windows)
+            try std.fmt.allocPrint(allocator, "{s}-{s}.exe", .{ component, version })
+        else
+            try std.fmt.allocPrint(allocator, "{s}-{s}", .{ component, version });
+        defer allocator.free(filename);
+        return std.fs.path.join(allocator, &.{ self.root, "bin", filename });
+    }
+
+    // ── Instance paths ───────────────────────────────────────────────
+
+    /// `{root}/instances/{component}/{name}`
+    pub fn instanceDir(self: Paths, allocator: std.mem.Allocator, component: []const u8, name: []const u8) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "instances", component, name });
+    }
+
+    /// `{root}/instances/{component}/{name}/config.json`
+    pub fn instanceConfig(self: Paths, allocator: std.mem.Allocator, component: []const u8, name: []const u8) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "instances", component, name, "config.json" });
+    }
+
+    /// `{root}/instances/{component}/{name}/data`
+    pub fn instanceData(self: Paths, allocator: std.mem.Allocator, component: []const u8, name: []const u8) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "instances", component, name, "data" });
+    }
+
+    /// `{root}/instances/{component}/{name}/logs`
+    pub fn instanceLogs(self: Paths, allocator: std.mem.Allocator, component: []const u8, name: []const u8) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "instances", component, name, "logs" });
+    }
+
+    /// `{root}/instances/{component}/{name}/instance.json`
+    pub fn instanceMeta(self: Paths, allocator: std.mem.Allocator, component: []const u8, name: []const u8) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "instances", component, name, "instance.json" });
+    }
+
+    // ── UI module paths ──────────────────────────────────────────────
+
+    /// `{root}/ui/{module_name}@{version}`
+    pub fn uiModule(self: Paths, allocator: std.mem.Allocator, module_name: []const u8, version: []const u8) ![]const u8 {
+        const dirname = try std.fmt.allocPrint(allocator, "{s}@{s}", .{ module_name, version });
+        defer allocator.free(dirname);
+        return std.fs.path.join(allocator, &.{ self.root, "ui", dirname });
+    }
+
+    // ── Cache paths ──────────────────────────────────────────────────
+
+    /// `{root}/cache/downloads`
+    pub fn cacheDownloads(self: Paths, allocator: std.mem.Allocator) ![]const u8 {
+        return std.fs.path.join(allocator, &.{ self.root, "cache", "downloads" });
+    }
+
+    // ── Directory creation ───────────────────────────────────────────
+
+    /// Create all required subdirectories under root.
+    pub fn ensureDirs(self: Paths) !void {
+        const dirs = [_][]const u8{
+            "manifests",
+            "bin",
+            "instances",
+            "ui",
+            "cache/downloads",
+            "cache/usage",
+        };
+        for (dirs) |sub| {
+            // Use makePath on an absolute directory via cwd handle.
+            // std.fs.path.join would need an allocator; instead we open root
+            // and create the sub-path relative to it.
+            try makeAbsSubpath(self.root, sub);
+        }
+    }
+};
+
+fn getHomeDirOwned(allocator: std.mem.Allocator) ![]u8 {
+    return std_compat.process.getEnvVarOwned(allocator, "HOME") catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => {
+            if (builtin.os.tag == .windows) {
+                return std_compat.process.getEnvVarOwned(allocator, "USERPROFILE") catch error.HomeNotSet;
+            }
+            return error.HomeNotSet;
+        },
+        else => return err,
+    };
+}
+
+fn getNormalizedEnvVarOwned(allocator: std.mem.Allocator, key: []const u8) ?[]u8 {
+    const value = std_compat.process.getEnvVarOwned(allocator, key) catch return null;
+    errdefer allocator.free(value);
+
+    const trimmed = std.mem.trim(u8, value, " \r\n\t");
+    if (trimmed.len == 0) {
+        allocator.free(value);
+        return null;
+    }
+    if (trimmed.ptr == value.ptr and trimmed.len == value.len) {
+        return value;
+    }
+
+    const normalized = allocator.dupe(u8, trimmed) catch return null;
+    allocator.free(value);
+    return normalized;
+}
+
+pub fn getTempDirOwned(allocator: std.mem.Allocator) ![]u8 {
+    if (builtin.os.tag == .windows) {
+        const keys = [_][]const u8{ "TEMP", "TMP" };
+        for (keys) |key| {
+            if (getNormalizedEnvVarOwned(allocator, key)) |value| return value;
+        }
+
+        const home = try getHomeDirOwned(allocator);
+        defer allocator.free(home);
+        return std.fs.path.join(allocator, &.{ home, "AppData", "Local", "Temp" });
+    }
+
+    if (getNormalizedEnvVarOwned(allocator, "TMPDIR")) |value| return value;
+    return allocator.dupe(u8, "/tmp");
+}
+
+pub fn uniqueTempPathAlloc(
+    allocator: std.mem.Allocator,
+    prefix: []const u8,
+    suffix: []const u8,
+) ![]u8 {
+    const temp_dir = try getTempDirOwned(allocator);
+    defer allocator.free(temp_dir);
+
+    const leaf = try std.fmt.allocPrint(allocator, "{s}-{d}-{x}{s}", .{
+        prefix,
+        @abs(std_compat.time.milliTimestamp()),
+        std_compat.crypto.random.int(u64),
+        suffix,
+    });
+    defer allocator.free(leaf);
+
+    return std.fs.path.join(allocator, &.{ temp_dir, leaf });
+}
+
+/// Helper: create `{base}/{sub}` as an absolute directory tree.
+fn makeAbsSubpath(base: []const u8, sub: []const u8) !void {
+    // Open the root directory (create it first if needed).
+    var root_dir = std_compat.fs.openDirAbsolute(base, .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            // Root doesn't exist — create it then retry.
+            try std_compat.fs.makeDirAbsolute(base);
+            return makeAbsSubpath(base, sub);
+        },
+        else => return err,
+    };
+    defer root_dir.close();
+    try root_dir.makePath(sub);
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+test "paths resolve under custom root" {
+    const allocator = std.testing.allocator;
+    var p = try Paths.init(allocator, "/tmp/test-aizen-dashboard");
+    defer p.deinit(allocator);
+
+    const cfg = try p.config(allocator);
+    defer allocator.free(cfg);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/config.json", cfg);
+
+    const st = try p.state(allocator);
+    defer allocator.free(st);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/state.json", st);
+
+    const mf = try p.manifest(allocator, "aizen", "2026.3.1");
+    defer allocator.free(mf);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/manifests/aizen@2026.3.1.json", mf);
+
+    const bin = try p.binary(allocator, "aizen", "2026.3.1");
+    defer allocator.free(bin);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/bin/aizen-2026.3.1", bin);
+
+    const inst_dir = try p.instanceDir(allocator, "aizen", "my-agent");
+    defer allocator.free(inst_dir);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/instances/aizen/my-agent", inst_dir);
+
+    const inst = try p.instanceConfig(allocator, "aizen", "my-agent");
+    defer allocator.free(inst);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/instances/aizen/my-agent/config.json", inst);
+
+    const data = try p.instanceData(allocator, "aizen", "my-agent");
+    defer allocator.free(data);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/instances/aizen/my-agent/data", data);
+
+    const logs = try p.instanceLogs(allocator, "aizen", "my-agent");
+    defer allocator.free(logs);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/instances/aizen/my-agent/logs", logs);
+
+    const meta = try p.instanceMeta(allocator, "aizen", "my-agent");
+    defer allocator.free(meta);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/instances/aizen/my-agent/instance.json", meta);
+
+    const ui = try p.uiModule(allocator, "aizen-dashboard-ui", "1.2.0");
+    defer allocator.free(ui);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/ui/aizen-dashboard-ui@1.2.0", ui);
+
+    const dl = try p.cacheDownloads(allocator);
+    defer allocator.free(dl);
+    try std.testing.expectEqualStrings("/tmp/test-aizen-dashboard/cache/downloads", dl);
+}
+
+test "ensureDirs creates all subdirectories" {
+    const allocator = std.testing.allocator;
+
+    // Use a unique temp directory to avoid interference.
+    const tmp_root = "/tmp/test-aizen-dashboard-ensure-dirs";
+
+    // Clean up from any previous run.
+    std_compat.fs.deleteTreeAbsolute(tmp_root) catch {};
+
+    var p = try Paths.init(allocator, tmp_root);
+    defer p.deinit(allocator);
+
+    try p.ensureDirs();
+
+    // Verify every expected subdirectory exists.
+    const expected = [_][]const u8{
+        "/tmp/test-aizen-dashboard-ensure-dirs/manifests",
+        "/tmp/test-aizen-dashboard-ensure-dirs/bin",
+        "/tmp/test-aizen-dashboard-ensure-dirs/instances",
+        "/tmp/test-aizen-dashboard-ensure-dirs/ui",
+        "/tmp/test-aizen-dashboard-ensure-dirs/cache/downloads",
+        "/tmp/test-aizen-dashboard-ensure-dirs/cache/usage",
+    };
+    for (expected) |dir| {
+        var d = try std_compat.fs.openDirAbsolute(dir, .{});
+        d.close();
+    }
+
+    // Clean up.
+    std_compat.fs.deleteTreeAbsolute(tmp_root) catch {};
+}
+
+test "init without custom root reads HOME" {
+    const allocator = std.testing.allocator;
+
+    const home = getHomeDirOwned(allocator) catch return; // skip if no HOME/USERPROFILE
+    defer allocator.free(home);
+    const expected_root = try std.fs.path.join(allocator, &.{ home, ".aizen-dashboard" });
+    defer allocator.free(expected_root);
+
+    var p = try Paths.init(allocator, null);
+    defer p.deinit(allocator);
+
+    try std.testing.expectEqualStrings(expected_root, p.root);
+}
+
+test "getTempDirOwned returns absolute directory" {
+    const allocator = std.testing.allocator;
+    const path = try getTempDirOwned(allocator);
+    defer allocator.free(path);
+
+    try std.testing.expect(std.fs.path.isAbsolute(path));
+}
+
+test "uniqueTempPathAlloc uses requested prefix and suffix" {
+    const allocator = std.testing.allocator;
+    const path = try uniqueTempPathAlloc(allocator, "aizen-dashboard-paths-test", ".json");
+    defer allocator.free(path);
+
+    try std.testing.expect(std.fs.path.isAbsolute(path));
+    try std.testing.expect(std.mem.endsWith(u8, path, ".json"));
+    try std.testing.expect(std.mem.indexOf(u8, path, "aizen-dashboard-paths-test-") != null);
+}

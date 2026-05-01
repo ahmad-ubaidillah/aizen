@@ -1,0 +1,358 @@
+/// Domain types for AizenOrchestrate orchestrator.
+/// Enums, DB row types, and API response types.
+const std = @import("std");
+
+// ── Enums ──────────────────────────────────────────────────────────────
+
+pub const RunStatus = enum {
+    pending,
+    running,
+    interrupted,
+    completed,
+    failed,
+    cancelled,
+    forked,
+
+    pub fn toString(self: RunStatus) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?RunStatus {
+        inline for (@typeInfo(RunStatus).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+pub const StepStatus = enum {
+    pending,
+    ready,
+    running,
+    completed,
+    failed,
+    skipped,
+    interrupted,
+
+    pub fn toString(self: StepStatus) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?StepStatus {
+        inline for (@typeInfo(StepStatus).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+pub const StepType = enum {
+    task,
+    route,
+    interrupt,
+    agent,
+    send,
+    transform,
+    subgraph,
+
+    pub fn toString(self: StepType) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?StepType {
+        inline for (@typeInfo(StepType).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+pub const WorkerStatus = enum {
+    active,
+    draining,
+    dead,
+
+    pub fn toString(self: WorkerStatus) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?WorkerStatus {
+        inline for (@typeInfo(WorkerStatus).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+pub const WorkerSource = enum {
+    config,
+    registered,
+
+    pub fn toString(self: WorkerSource) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?WorkerSource {
+        inline for (@typeInfo(WorkerSource).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+pub const TrackerTaskState = enum {
+    claiming,
+    workspace_setup,
+    spawning,
+    running,
+    completing,
+    completed,
+    failed,
+    stalled,
+    cooldown,
+    removing,
+
+    pub fn toString(self: TrackerTaskState) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?TrackerTaskState {
+        inline for (@typeInfo(TrackerTaskState).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+// ── DB Row Types ───────────────────────────────────────────────────────
+
+pub const WorkerRow = struct {
+    id: []const u8,
+    url: []const u8,
+    token: []const u8,
+    protocol: []const u8,
+    model: ?[]const u8,
+    tags_json: []const u8,
+    max_concurrent: i64,
+    source: []const u8,
+    status: []const u8,
+    consecutive_failures: i64,
+    circuit_open_until_ms: ?i64,
+    last_error_text: ?[]const u8,
+    last_health_ms: ?i64,
+    created_at_ms: i64,
+};
+
+pub const RunRow = struct {
+    id: []const u8,
+    idempotency_key: ?[]const u8,
+    status: []const u8,
+    workflow_id: ?[]const u8 = null,
+    workflow_json: []const u8,
+    input_json: []const u8,
+    callbacks_json: []const u8,
+    error_text: ?[]const u8,
+    created_at_ms: i64,
+    updated_at_ms: i64,
+    started_at_ms: ?i64,
+    ended_at_ms: ?i64,
+    state_json: ?[]const u8 = null,
+    config_json: ?[]const u8 = null,
+    parent_run_id: ?[]const u8 = null,
+};
+
+pub const StepRow = struct {
+    id: []const u8,
+    run_id: []const u8,
+    def_step_id: []const u8,
+    type: []const u8,
+    status: []const u8,
+    worker_id: ?[]const u8,
+    input_json: []const u8,
+    output_json: ?[]const u8,
+    error_text: ?[]const u8,
+    attempt: i64,
+    max_attempts: i64,
+    timeout_ms: ?i64,
+    next_attempt_at_ms: ?i64,
+    parent_step_id: ?[]const u8,
+    item_index: ?i64,
+    created_at_ms: i64,
+    updated_at_ms: i64,
+    started_at_ms: ?i64,
+    ended_at_ms: ?i64,
+    child_run_id: ?[]const u8,
+    iteration_index: i64,
+};
+
+pub const EventRow = struct {
+    id: i64,
+    run_id: []const u8,
+    step_id: ?[]const u8,
+    kind: []const u8,
+    data_json: []const u8,
+    ts_ms: i64,
+};
+
+pub const ArtifactRow = struct {
+    id: []const u8,
+    run_id: []const u8,
+    step_id: ?[]const u8,
+    kind: []const u8,
+    uri: []const u8,
+    meta_json: []const u8,
+    created_at_ms: i64,
+};
+
+pub const TrackerRunRow = struct {
+    task_id: []const u8,
+    tracker_run_id: []const u8,
+    boiler_run_id: []const u8,
+    lease_id: []const u8,
+    lease_token: []const u8,
+    pipeline_id: []const u8,
+    agent_role: []const u8,
+    task_title: []const u8,
+    task_stage: []const u8,
+    task_version: i64,
+    success_trigger: ?[]const u8,
+    artifact_kind: []const u8,
+    state: []const u8,
+    claimed_at_ms: i64,
+    last_heartbeat_ms: ?i64,
+    lease_expires_at_ms: ?i64,
+    completed_at_ms: ?i64,
+    last_error_text: ?[]const u8,
+};
+
+pub const WorkflowRow = struct {
+    id: []const u8,
+    name: []const u8,
+    definition_json: []const u8,
+    version: i64 = 1,
+    created_at_ms: i64,
+    updated_at_ms: i64,
+};
+
+pub const CheckpointRow = struct {
+    id: []const u8,
+    run_id: []const u8,
+    step_id: []const u8,
+    parent_id: ?[]const u8,
+    state_json: []const u8,
+    completed_nodes_json: []const u8,
+    version: i64,
+    metadata_json: ?[]const u8,
+    created_at_ms: i64,
+};
+
+pub const AgentEventRow = struct {
+    id: i64,
+    run_id: []const u8,
+    step_id: []const u8,
+    iteration: i64,
+    tool: ?[]const u8,
+    args_json: ?[]const u8,
+    result_text: ?[]const u8,
+    status: []const u8,
+    created_at_ms: i64,
+};
+
+pub const PendingInjectionRow = struct {
+    id: i64,
+    run_id: []const u8,
+    updates_json: []const u8,
+    apply_after_step: ?[]const u8,
+    created_at_ms: i64,
+};
+
+pub const PendingWriteRow = struct {
+    id: i64,
+    run_id: []const u8,
+    step_id: []const u8,
+    channel: []const u8,
+    value_json: []const u8,
+    created_at_ms: i64,
+};
+
+pub const ReducerType = enum {
+    last_value,
+    append,
+    merge,
+    add,
+    min,
+    max,
+    add_messages,
+
+    pub fn toString(self: ReducerType) []const u8 {
+        return @tagName(self);
+    }
+
+    pub fn fromString(s: []const u8) ?ReducerType {
+        inline for (@typeInfo(ReducerType).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+};
+
+// ── API Response Types ─────────────────────────────────────────────────
+
+pub const HealthResponse = struct {
+    status: []const u8,
+    version: []const u8,
+    active_runs: i64,
+    total_workers: i64,
+};
+
+pub const ErrorResponse = struct {
+    @"error": ErrorDetail,
+};
+
+pub const ErrorDetail = struct {
+    code: []const u8,
+    message: []const u8,
+};
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
+test "RunStatus round-trip" {
+    const s = RunStatus.pending;
+    const name = s.toString();
+    try std.testing.expectEqualStrings("pending", name);
+    const parsed = RunStatus.fromString(name);
+    try std.testing.expectEqual(RunStatus.pending, parsed.?);
+}
+
+test "StepStatus round-trip" {
+    const s = StepStatus.interrupted;
+    const name = s.toString();
+    try std.testing.expectEqualStrings("interrupted", name);
+    const parsed = StepStatus.fromString(name);
+    try std.testing.expectEqual(StepStatus.interrupted, parsed.?);
+}
+
+test "StepType round-trip" {
+    const s = StepType.route;
+    try std.testing.expectEqualStrings("route", s.toString());
+    try std.testing.expectEqual(StepType.route, StepType.fromString("route").?);
+}
+
+test "WorkerStatus round-trip" {
+    try std.testing.expectEqual(WorkerStatus.draining, WorkerStatus.fromString("draining").?);
+}
+
+test "WorkerSource round-trip" {
+    try std.testing.expectEqual(WorkerSource.registered, WorkerSource.fromString("registered").?);
+}
+
+test "TrackerTaskState round-trip" {
+    const s = TrackerTaskState.running;
+    try std.testing.expectEqualStrings("running", s.toString());
+    try std.testing.expectEqual(TrackerTaskState.running, TrackerTaskState.fromString("running").?);
+}
+
+test "fromString returns null for unknown" {
+    try std.testing.expectEqual(@as(?RunStatus, null), RunStatus.fromString("bogus"));
+    try std.testing.expectEqual(@as(?StepStatus, null), StepStatus.fromString("nope"));
+}

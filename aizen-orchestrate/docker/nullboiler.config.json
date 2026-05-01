@@ -1,0 +1,33 @@
+{
+  "host": "0.0.0.0",
+  "port": 8080,
+  "db": "/aizen-orchestrate-data/aizen-orchestrate.db",
+  "api_token": null,
+  "workers": [
+    {
+      "id": "aizen-local-1",
+      "url": "http://aizen:3000/webhook",
+      "token": "nb_worker_token_1",
+      "protocol": "webhook",
+      "tags": ["llm-dev"],
+      "max_concurrent": 2
+    }
+  ],
+  "tracker": {
+    "url": "http://aizen-kanban:7700",
+    "agent_id": "docker-dev-1",
+    "concurrency": {
+      "max_concurrent_tasks": 2
+    },
+    "poll_interval_ms": 5000,
+    "lease_ttl_ms": 120000,
+    "heartbeat_interval_ms": 30000,
+    "workflows_dir": "/aizen-orchestrate-data/workflows"
+  },
+  "engine": {
+    "poll_interval_ms": 500,
+    "default_timeout_ms": 300000,
+    "default_max_attempts": 1,
+    "health_check_interval_ms": 30000
+  }
+}

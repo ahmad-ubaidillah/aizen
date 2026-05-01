@@ -1,0 +1,134 @@
+name: Release
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  ZIG_VERSION: "0.16.0"
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            zig_target: x86_64-linux-musl
+            ext: ""
+          - os: ubuntu-latest
+            target: linux-aarch64
+            zig_target: aarch64-linux-musl
+            ext: ""
+          - os: ubuntu-latest
+            target: linux-riscv64
+            zig_target: riscv64-linux-musl
+            ext: ""
+          - os: macos-latest
+            target: macos-aarch64
+            zig_target: aarch64-macos
+            ext: ""
+          - os: macos-latest
+            target: macos-x86_64
+            zig_target: x86_64-macos
+            ext: ""
+          - os: windows-latest
+            target: windows-x86_64
+            zig_target: x86_64-windows
+            ext: ".exe"
+          - os: windows-latest
+            target: windows-aarch64
+            zig_target: aarch64-windows
+            ext: ".exe"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Zig 0.16.0
+        run: bash .github/scripts/install-zig.sh "${ZIG_VERSION}"
+
+      - name: Resolve build version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build ReleaseSmall
+        run: zig build -Doptimize=ReleaseSmall -Dversion=${{ steps.version.outputs.value }} -Dtarget=${{ matrix.zig_target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aizen-watch-${{ matrix.target }}
+          path: zig-out/bin/aizen-watch${{ matrix.ext }}
+
+  source:
+    name: Prepare source archive
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create source archive
+        run: |
+          archive_name="aizen-watch-source-${GITHUB_REF_NAME}.tar.gz"
+          tar \
+            --exclude='.git' \
+            --exclude='.zig-cache' \
+            --exclude='zig-out' \
+            -czf "/tmp/${archive_name}" .
+          mv "/tmp/${archive_name}" .
+          echo "ARCHIVE_NAME=${archive_name}" >> "$GITHUB_ENV"
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: aizen-watch-source
+          path: ${{ env.ARCHIVE_NAME }}
+
+  release:
+    needs: [build, source]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v8
+
+      - name: Rename binaries
+        run: |
+          mv aizen-watch-linux-x86_64/aizen-watch aizen-watch-linux-x86_64.bin
+          mv aizen-watch-linux-aarch64/aizen-watch aizen-watch-linux-aarch64.bin
+          mv aizen-watch-linux-riscv64/aizen-watch aizen-watch-linux-riscv64.bin
+          mv aizen-watch-macos-aarch64/aizen-watch aizen-watch-macos-aarch64.bin
+          mv aizen-watch-macos-x86_64/aizen-watch aizen-watch-macos-x86_64.bin
+          mv aizen-watch-windows-x86_64/aizen-watch.exe aizen-watch-windows-x86_64.exe
+          mv aizen-watch-windows-aarch64/aizen-watch.exe aizen-watch-windows-aarch64.exe
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            aizen-watch-linux-x86_64.bin
+            aizen-watch-linux-aarch64.bin
+            aizen-watch-linux-riscv64.bin
+            aizen-watch-macos-aarch64.bin
+            aizen-watch-macos-x86_64.bin
+            aizen-watch-windows-x86_64.exe
+            aizen-watch-windows-aarch64.exe
+            aizen-watch-source/*.tar.gz
+          generate_release_notes: true

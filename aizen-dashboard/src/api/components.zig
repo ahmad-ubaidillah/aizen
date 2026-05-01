@@ -1,0 +1,269 @@
+const std = @import("std");
+const std_compat = @import("compat");
+const registry = @import("../installer/registry.zig");
+const paths_mod = @import("../core/paths.zig");
+const state_mod = @import("../core/state.zig");
+
+// ─── Display name derivation ─────────────────────────────────────────────────
+
+/// Derive a display name from a component name by capitalizing the first letter.
+/// Caller owns the returned memory.
+pub fn deriveDisplayName(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
+    if (name.len == 0) return try allocator.dupe(u8, "");
+    const buf = try allocator.alloc(u8, name.len);
+    @memcpy(buf, name);
+    buf[0] = std.ascii.toUpper(buf[0]);
+    return buf;
+}
+
+// ─── Installation detection ─────────────────────────────────────────────────
+
+/// Check if a component has a standalone installation at ~/.{component}/config.json
+fn hasStandaloneInstall(allocator: std.mem.Allocator, component: []const u8) bool {
+    const home = std_compat.process.getEnvVarOwned(allocator, "HOME") catch return false;
+    defer allocator.free(home);
+    const dot_name = std.fmt.allocPrint(allocator, ".{s}", .{component}) catch return false;
+    defer allocator.free(dot_name);
+    const config_path = std.fs.path.join(allocator, &.{ home, dot_name, "config.json" }) catch return false;
+    defer allocator.free(config_path);
+    std_compat.fs.accessAbsolute(config_path, .{}) catch return false;
+    return true;
+}
+
+/// Count the number of instances for a component from state.
+fn countInstancesFromState(s: *state_mod.State, component: []const u8) u32 {
+    const inst_map = s.instances.get(component) orelse return 0;
+    return @intCast(inst_map.count());
+}
+
+// ─── Handlers ────────────────────────────────────────────────────────────────
+
+/// Handle GET /api/components — returns list of all known components with metadata.
+/// Caller owns the returned memory.
+pub fn handleList(allocator: std.mem.Allocator, s: *state_mod.State) ![]const u8 {
+    return buildListJson(allocator, s);
+}
+
+fn buildListJson(allocator: std.mem.Allocator, s: *state_mod.State) ![]const u8 {
+    var buf = std.array_list.Managed(u8).init(allocator);
+    errdefer buf.deinit();
+    try buf.appendSlice("{\"components\":[");
+
+    for (registry.known_components, 0..) |comp, i| {
+        if (i > 0) try buf.append(',');
+
+        // Count managed instances from state
+        const instance_count = countInstancesFromState(s, comp.name);
+
+        // standalone = has dot-dir config but not yet imported into aizen-dashboard
+        const has_dot_dir = hasStandaloneInstall(allocator, comp.name);
+        const standalone = has_dot_dir and instance_count == 0;
+        const installed = has_dot_dir or instance_count > 0;
+
+        try buf.print(
+            "{{\"name\":\"{s}\",\"display_name\":\"{s}\",\"description\":\"{s}\",\"repo\":\"{s}\",\"alpha\":{s},\"installed\":{s},\"standalone\":{s},\"instance_count\":{d}}}",
+            .{
+                comp.name,
+                comp.display_name,
+                comp.description,
+                comp.repo,
+                if (comp.is_alpha) "true" else "false",
+                if (installed) "true" else "false",
+                if (standalone) "true" else "false",
+                instance_count,
+            },
+        );
+    }
+
+    try buf.appendSlice("]}");
+    return buf.toOwnedSlice();
+}
+
+/// Handle GET /api/components/{name}/manifest — returns cached manifest or 404.
+/// Returns null if no cached manifest exists.
+pub fn handleManifest(allocator: std.mem.Allocator, component_name: []const u8) !?[]const u8 {
+    // Verify the component is known
+    if (registry.findKnownComponent(component_name) == null) {
+        return null;
+    }
+
+    // Try to find a cached manifest file
+    var p = paths_mod.Paths.init(allocator, null) catch return null;
+    defer p.deinit(allocator);
+
+    const manifests_dir_path = try std.fs.path.join(allocator, &.{ p.root, "manifests" });
+    defer allocator.free(manifests_dir_path);
+
+    // Look for any manifest file matching "{component_name}@*.json"
+    var dir = std_compat.fs.openDirAbsolute(manifests_dir_path, .{ .iterate = true }) catch return null;
+    defer dir.close();
+
+    const prefix = try std.fmt.allocPrint(allocator, "{s}@", .{component_name});
+    defer allocator.free(prefix);
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind == .file and
+            std.mem.startsWith(u8, entry.name, prefix) and
+            std.mem.endsWith(u8, entry.name, ".json"))
+        {
+            // Read the manifest file
+            const full_path = try std.fs.path.join(allocator, &.{ manifests_dir_path, entry.name });
+            defer allocator.free(full_path);
+
+            const file = std_compat.fs.openFileAbsolute(full_path, .{}) catch return null;
+            defer file.close();
+
+            const contents = file.readToEndAlloc(allocator, 1024 * 1024) catch return null;
+            return contents;
+        }
+    }
+
+    return null;
+}
+
+/// Handle POST /api/components/refresh — placeholder for future manifest refresh.
+/// Returns a success response body.
+pub fn handleRefresh(allocator: std.mem.Allocator) ![]const u8 {
+    return try allocator.dupe(u8, "{\"status\":\"ok\"}");
+}
+
+// ─── Route extraction helper ─────────────────────────────────────────────────
+
+/// Extract a component name from a path like "/api/components/{name}/manifest".
+/// Returns null if the path doesn't match the expected pattern.
+pub fn extractComponentName(target: []const u8) ?[]const u8 {
+    const prefix = "/api/components/";
+    if (!std.mem.startsWith(u8, target, prefix)) return null;
+    const rest = target[prefix.len..];
+    if (rest.len == 0) return null;
+
+    // Find the end of the component name (next '/' or end of string)
+    if (std.mem.indexOfScalar(u8, rest, '/')) |slash_pos| {
+        if (slash_pos == 0) return null;
+        return rest[0..slash_pos];
+    }
+    return rest;
+}
+
+/// Check if a target path matches "/api/components/{name}/manifest".
+pub fn isManifestPath(target: []const u8) bool {
+    const prefix = "/api/components/";
+    if (!std.mem.startsWith(u8, target, prefix)) return false;
+    const rest = target[prefix.len..];
+    if (std.mem.indexOfScalar(u8, rest, '/')) |slash_pos| {
+        return std.mem.eql(u8, rest[slash_pos..], "/manifest");
+    }
+    return false;
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+test "deriveDisplayName capitalizes first letter" {
+    const allocator = std.testing.allocator;
+
+    const name1 = try deriveDisplayName(allocator, "aizen");
+    defer allocator.free(name1);
+    try std.testing.expectEqualStrings("Aizen", name1);
+
+    const name2 = try deriveDisplayName(allocator, "aizen-orchestrate");
+    defer allocator.free(name2);
+    try std.testing.expectEqualStrings("Nullboiler", name2);
+
+    const name3 = try deriveDisplayName(allocator, "");
+    defer allocator.free(name3);
+    try std.testing.expectEqualStrings("", name3);
+}
+
+test "handleList returns valid JSON with all 3 known components" {
+    const allocator = std.testing.allocator;
+    var s = state_mod.State.init(allocator, "/tmp/aizen-dashboard-test-components.json");
+    defer s.deinit();
+
+    const json = try handleList(allocator, &s);
+    defer allocator.free(json);
+
+    // Verify it starts and ends correctly
+    try std.testing.expect(std.mem.startsWith(u8, json, "{\"components\":["));
+    try std.testing.expect(std.mem.endsWith(u8, json, "]}"));
+
+    // Verify all 3 components are present
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"aizen\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"aizen-orchestrate\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"aizen-kanban\"") != null);
+
+    // Verify display names
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"Aizen\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"AizenOrchestrate\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"AizenKanban\"") != null);
+
+    // Verify descriptions are present
+    try std.testing.expect(std.mem.indexOf(u8, json, "Autonomous AI agent runtime") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "DAG-based workflow orchestrator") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "Task and issue tracker") != null);
+
+    // Verify repo fields
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"aizen/aizen\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"aizen/AizenOrchestrate\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"aizen/aizen-kanban\"") != null);
+
+    // Verify structural fields
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"alpha\"") != null);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, json, "\"alpha\":true"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, json, "\"alpha\":false"));
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"installed\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"instance_count\"") != null);
+}
+
+test "handleManifest returns null for non-cached manifest" {
+    const allocator = std.testing.allocator;
+
+    // This should return null since there's no cached manifest on disk
+    const result = try handleManifest(allocator, "aizen");
+    try std.testing.expect(result == null);
+}
+
+test "handleManifest returns null for unknown component" {
+    const allocator = std.testing.allocator;
+
+    const result = try handleManifest(allocator, "nonexistent");
+    try std.testing.expect(result == null);
+}
+
+test "handleRefresh returns ok status" {
+    const allocator = std.testing.allocator;
+
+    const json = try handleRefresh(allocator);
+    defer allocator.free(json);
+    try std.testing.expectEqualStrings("{\"status\":\"ok\"}", json);
+}
+
+test "extractComponentName parses paths correctly" {
+    // Valid component name extraction
+    const name1 = extractComponentName("/api/components/aizen/manifest");
+    try std.testing.expect(name1 != null);
+    try std.testing.expectEqualStrings("aizen", name1.?);
+
+    const name2 = extractComponentName("/api/components/aizen-orchestrate/manifest");
+    try std.testing.expect(name2 != null);
+    try std.testing.expectEqualStrings("aizen-orchestrate", name2.?);
+
+    // Path without sub-resource
+    const name3 = extractComponentName("/api/components/aizen");
+    try std.testing.expect(name3 != null);
+    try std.testing.expectEqualStrings("aizen", name3.?);
+
+    // Invalid paths
+    try std.testing.expect(extractComponentName("/api/components/") == null);
+    try std.testing.expect(extractComponentName("/api/components") == null);
+    try std.testing.expect(extractComponentName("/api/other") == null);
+}
+
+test "isManifestPath identifies manifest paths" {
+    try std.testing.expect(isManifestPath("/api/components/aizen/manifest"));
+    try std.testing.expect(isManifestPath("/api/components/aizen-orchestrate/manifest"));
+    try std.testing.expect(!isManifestPath("/api/components/aizen"));
+    try std.testing.expect(!isManifestPath("/api/components/aizen/other"));
+    try std.testing.expect(!isManifestPath("/api/components"));
+    try std.testing.expect(!isManifestPath("/health"));
+}

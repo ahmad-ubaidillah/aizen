@@ -1,0 +1,23 @@
+.{
+    .name = .aizen-orchestrate,
+    .fingerprint = 0xa2fe02b8f872821f,
+    .version = "2026.3.2",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .sqlite3 = .{
+            .path = "deps/sqlite",
+        },
+        .hiredis = .{
+            .path = "deps/hiredis",
+        },
+        .mosquitto = .{
+            .path = "deps/mosquitto",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "deps",
+    },
+}

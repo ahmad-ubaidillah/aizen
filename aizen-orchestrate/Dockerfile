@@ -1,0 +1,94 @@
+# syntax=docker/dockerfile:1
+
+# -- Stage 1: Build ----------------------------------------------------------
+# Build on the native builder architecture and cross-compile with Zig.
+FROM --platform=$BUILDPLATFORM alpine:3.23 AS builder
+
+ARG ZIG_VERSION=0.16.0
+
+RUN apk add --no-cache bash curl musl-dev python3 tar xz
+
+COPY .github/scripts/install-zig.sh /tmp/install-zig.sh
+RUN set -eu; \
+    export GITHUB_PATH=/tmp/zig-path; \
+    export RUNNER_OS=Linux; \
+    case "$(uname -m)" in \
+      x86_64) export RUNNER_ARCH=X64 ;; \
+      aarch64|arm64) export RUNNER_ARCH=ARM64 ;; \
+      *) echo "Unsupported host arch: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    bash /tmp/install-zig.sh "${ZIG_VERSION}"; \
+    zig_dir="$(cat /tmp/zig-path)"; \
+    ln -sf "${zig_dir}/zig" /usr/local/bin/zig; \
+    zig version
+
+WORKDIR /app
+COPY build.zig build.zig.zon ./
+COPY src/ src/
+COPY deps/ deps/
+
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/zig \
+    --mount=type=cache,target=/app/.zig-cache \
+    set -eu; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "${arch}" ]; then \
+      case "$(uname -m)" in \
+        x86_64) arch="amd64" ;; \
+        aarch64|arm64) arch="arm64" ;; \
+        *) echo "Unsupported host arch: $(uname -m)" >&2; exit 1 ;; \
+      esac; \
+    fi; \
+    case "${arch}" in \
+      amd64) zig_target="x86_64-linux-musl" ;; \
+      arm64) zig_target="aarch64-linux-musl" ;; \
+      *) echo "Unsupported TARGETARCH: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    zig build -Dtarget="${zig_target}" -Doptimize=ReleaseSmall
+
+# -- Stage 2: Config Prep ----------------------------------------------------
+FROM busybox:1.37 AS config
+
+RUN mkdir -p /aizen-orchestrate-data/.aizen-orchestrate /aizen-orchestrate-data/workspace
+
+RUN cat > /aizen-orchestrate-data/.aizen-orchestrate/config.json << 'EOF'
+{
+  "gateway": {
+    "port": 3000,
+    "host": "::",
+    "allow_public_bind": true
+  }
+}
+EOF
+
+# Default runtime runs as non-root (uid/gid 65534).
+# Keep writable ownership for HOME/workspace in safe mode.
+RUN chown -R 65534:65534 /aizen-orchestrate-data
+
+# -- Stage 3: Runtime Base (shared) ------------------------------------------
+FROM alpine:3.23 AS release-base
+
+LABEL org.opencontainers.image.source=https://github.com/aizen-orchestrate/aizen-orchestrate
+
+RUN apk add --no-cache ca-certificates curl tzdata
+
+COPY --from=builder /app/zig-out/bin/aizen-orchestrate /usr/local/bin/aizen-orchestrate
+COPY --from=config /aizen-orchestrate-data /aizen-orchestrate-data
+
+ENV NULLBOILER_WORKSPACE=/aizen-orchestrate-data/workspace
+ENV HOME=/aizen-orchestrate-data
+ENV NULLBOILER_GATEWAY_PORT=3000
+
+WORKDIR /aizen-orchestrate-data
+EXPOSE 3000
+ENTRYPOINT ["aizen-orchestrate"]
+CMD ["gateway", "--port", "3000", "--host", "::"]
+
+# Optional autonomous mode (explicit opt-in):
+#   docker build --target release-root -t aizen-orchestrate:root .
+FROM release-base AS release-root
+USER 0:0
+
+# Safe default image (used when no --target is provided)
+FROM release-base AS release
+USER 65534:65534

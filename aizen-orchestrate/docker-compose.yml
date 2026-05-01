@@ -1,0 +1,63 @@
+services:
+  aizen-orchestrate:
+    build: .
+    image: aizen-orchestrate:latest
+    command:
+      - --config
+      - /aizen-orchestrate-data/config.json
+      - --db
+      - /aizen-orchestrate-data/aizen-orchestrate.db
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - aizen-orchestrate-data:/aizen-orchestrate-data
+      - ./docker/aizen-orchestrate.config.json:/aizen-orchestrate-data/config.json:ro
+      - ./docker/workflows:/aizen-orchestrate-data/workflows:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  aizen:
+    profiles: ["aizen", "aizen-kanban"]
+    build:
+      context: ./reference/aizen
+    image: aizen:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - aizen-data:/aizen-data
+      - ./docker/aizen.config.json:/aizen-data/.aizen/config.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  aizen-kanban:
+    profiles: ["aizen-kanban"]
+    build:
+      context: ./reference/aizen-kanban
+    image: aizen-kanban:latest
+    ports:
+      - "7700:7700"
+    volumes:
+      - aizen-kanban-data:/aizen-kanban-data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  aizen-orchestrate-data:
+  aizen-data:
+  aizen-kanban-data:

@@ -1,0 +1,924 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "nullTickets API",
+    "version": "2026.3.2",
+    "description": "Headless AI task tracker API with leases, dependencies, assignments, pagination, KV store, and orchestrator ops endpoints."
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:7700" }
+  ],
+  "paths": {
+    "/openapi.json": {
+      "get": {
+        "summary": "Get OpenAPI document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/.well-known/openapi.json": {
+      "get": {
+        "summary": "Get OpenAPI document (well-known)",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } }
+          }
+        }
+      }
+    },
+    "/v1/traces": {
+      "post": {
+        "summary": "OTLP ingest",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "type": "object" } },
+            "application/x-protobuf": { "schema": { "type": "string", "format": "binary" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OtlpIngestResponse" } } }
+          }
+        }
+      }
+    },
+    "/otlp/v1/traces": {
+      "post": {
+        "summary": "OTLP ingest (collector-compatible path)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "type": "object" } },
+            "application/x-protobuf": { "schema": { "type": "string", "format": "binary" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OtlpIngestResponse" } } }
+          }
+        }
+      }
+    },
+    "/pipelines": {
+      "post": {
+        "summary": "Create pipeline",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PipelineCreateRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "409": { "$ref": "#/components/responses/Error409" }
+        }
+      },
+      "get": {
+        "summary": "List pipelines",
+        "responses": {
+          "200": {
+            "description": "Pipelines",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Pipeline" } } } }
+          }
+        }
+      }
+    },
+    "/pipelines/{id}": {
+      "get": {
+        "summary": "Get pipeline",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pipeline" } } }
+          },
+          "404": { "$ref": "#/components/responses/Error404" }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "summary": "Create task",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskCreateRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "409": { "$ref": "#/components/responses/Error409" }
+        }
+      },
+      "get": {
+        "summary": "List tasks (cursor paginated)",
+        "parameters": [
+          { "name": "stage", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "pipeline_id", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1000 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task page",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaginatedTasks" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error400" }
+        }
+      }
+    },
+    "/tasks/bulk": {
+      "post": {
+        "summary": "Bulk create tasks",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BulkTaskCreateRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BulkTaskCreateResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "409": { "$ref": "#/components/responses/Error409" }
+        }
+      }
+    },
+    "/tasks/{id}": {
+      "get": {
+        "summary": "Get task details",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task details",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskDetails" } } }
+          },
+          "404": { "$ref": "#/components/responses/Error404" }
+        }
+      }
+    },
+    "/tasks/{id}/dependencies": {
+      "post": {
+        "summary": "Add task dependency",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DependencyCreateRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "409": { "$ref": "#/components/responses/Error409" }
+        }
+      },
+      "get": {
+        "summary": "List task dependencies",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dependencies",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Dependency" } } } }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/assignments": {
+      "post": {
+        "summary": "Assign task to agent",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AssignmentCreateRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "404": { "$ref": "#/components/responses/Error404" }
+        }
+      },
+      "get": {
+        "summary": "List task assignments",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assignments",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Assignment" } } } }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/assignments/{agent_id}": {
+      "delete": {
+        "summary": "Unassign task from agent",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "agent_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Unassigned" },
+          "404": { "$ref": "#/components/responses/Error404" }
+        }
+      }
+    },
+    "/leases/claim": {
+      "post": {
+        "summary": "Claim next task",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LeaseClaimRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Claimed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ClaimResponse" } } }
+          },
+          "204": { "description": "No work" }
+        }
+      }
+    },
+    "/leases/{id}/heartbeat": {
+      "post": {
+        "summary": "Extend lease",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Extended",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "expires_at_ms": { "type": "integer" } }, "required": ["expires_at_ms"] } } }
+          },
+          "401": { "$ref": "#/components/responses/Error401" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "410": { "$ref": "#/components/responses/Error410" }
+        }
+      }
+    },
+    "/runs/{id}/events": {
+      "post": {
+        "summary": "Append run event",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventCreateRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] } } }
+          },
+          "401": { "$ref": "#/components/responses/Error401" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "410": { "$ref": "#/components/responses/Error410" }
+        }
+      },
+      "get": {
+        "summary": "List run events (cursor paginated)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1000 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event page",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaginatedRunEvents" } } }
+          }
+        }
+      }
+    },
+    "/runs/{id}/transition": {
+      "post": {
+        "summary": "Transition task stage",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransitionRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Transition result",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransitionResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/Error400" },
+          "401": { "$ref": "#/components/responses/Error401" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "409": { "$ref": "#/components/responses/Error409" },
+          "410": { "$ref": "#/components/responses/Error410" }
+        }
+      }
+    },
+    "/runs/{id}/fail": {
+      "post": {
+        "summary": "Fail run",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FailRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "Failed" },
+          "401": { "$ref": "#/components/responses/Error401" },
+          "404": { "$ref": "#/components/responses/Error404" },
+          "410": { "$ref": "#/components/responses/Error410" }
+        }
+      }
+    },
+    "/artifacts": {
+      "post": {
+        "summary": "Add artifact",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArtifactCreateRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdResponse" } } }
+          }
+        }
+      },
+      "get": {
+        "summary": "List artifacts (cursor paginated)",
+        "parameters": [
+          { "name": "task_id", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "run_id", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 1000 } },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact page",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaginatedArtifacts" } } }
+          }
+        }
+      }
+    },
+    "/ops/queue": {
+      "get": {
+        "summary": "Queue role stats for orchestrator",
+        "parameters": [
+          { "name": "near_expiry_ms", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "stuck_ms", "in": "query", "required": false, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queue stats",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QueueOpsResponse" } } }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/run-state": {
+      "get": {
+        "summary": "Get task run_id",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run state",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "run_id": { "type": "string" } }, "required": ["run_id"] } } }
+          },
+          "404": { "$ref": "#/components/responses/Error404" }
+        }
+      }
+    },
+    "/store/{namespace}/{key}": {
+      "put": {
+        "summary": "Put store entry",
+        "description": "Path segments are URL-decoded server-side. Percent-encode reserved characters such as spaces or '/'.",
+        "parameters": [
+          { "name": "namespace", "in": "path", "required": true, "description": "Store namespace. The literal name 'search' is reserved for the search endpoint.", "schema": { "type": "string" } },
+          { "name": "key", "in": "path", "required": true, "description": "Store key. Reserved characters should be percent-encoded by the client.", "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StorePutRequest" } } }
+        },
+        "responses": {
+          "204": { "description": "Stored" }
+        }
+      },
+      "get": {
+        "summary": "Get store entry",
+        "parameters": [
+          { "name": "namespace", "in": "path", "required": true, "description": "Store namespace. The literal name 'search' is reserved for the search endpoint.", "schema": { "type": "string" } },
+          { "name": "key", "in": "path", "required": true, "description": "Store key. Reserved characters should be percent-encoded by the client.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entry",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StoreEntry" } } }
+          },
+          "404": { "$ref": "#/components/responses/Error404" }
+        }
+      },
+      "delete": {
+        "summary": "Delete store entry",
+        "parameters": [
+          { "name": "namespace", "in": "path", "required": true, "description": "Store namespace. The literal name 'search' is reserved for the search endpoint.", "schema": { "type": "string" } },
+          { "name": "key", "in": "path", "required": true, "description": "Store key. Reserved characters should be percent-encoded by the client.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" }
+        }
+      }
+    },
+    "/store/{namespace}": {
+      "get": {
+        "summary": "List store entries in namespace",
+        "parameters": [
+          { "name": "namespace", "in": "path", "required": true, "description": "Store namespace. The literal name 'search' is reserved for the search endpoint.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/StoreEntry" } } } }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete all entries in namespace",
+        "parameters": [
+          { "name": "namespace", "in": "path", "required": true, "description": "Store namespace. The literal name 'search' is reserved for the search endpoint.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" }
+        }
+      }
+    },
+    "/store/search": {
+      "get": {
+        "summary": "Full-text search store entries",
+        "description": "Searches FTS5 content and can optionally narrow results with exact JSON filtering via filter_path/filter_value.",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "namespace", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "filter_path", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "filter_value", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/StoreEntry" } } } }
+          },
+          "400": { "$ref": "#/components/responses/Error400" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "token"
+      }
+    },
+    "responses": {
+      "Error400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+      "Error401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+      "Error404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+      "Error409": { "description": "Conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+      "Error410": { "description": "Expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      },
+      "IdResponse": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string" } }
+      },
+      "OtlpIngestResponse": {
+        "type": "object",
+        "required": ["batch_id", "accepted_spans", "stored"],
+        "properties": {
+          "batch_id": { "type": "integer" },
+          "accepted_spans": { "type": "integer" },
+          "stored": { "type": "string", "enum": ["json", "blob"] }
+        }
+      },
+      "HealthStageCount": {
+        "type": "object",
+        "required": ["stage", "count"],
+        "properties": {
+          "stage": { "type": "string" },
+          "count": { "type": "integer" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status", "version", "tasks_by_stage", "active_leases"],
+        "properties": {
+          "status": { "type": "string" },
+          "version": { "type": "string" },
+          "tasks_by_stage": { "type": "array", "items": { "$ref": "#/components/schemas/HealthStageCount" } },
+          "active_leases": { "type": "integer" }
+        }
+      },
+      "RetryPolicy": {
+        "type": "object",
+        "properties": {
+          "max_attempts": { "type": ["integer", "null"] },
+          "retry_delay_ms": { "type": "integer" },
+          "dead_letter_stage": { "type": ["string", "null"] }
+        }
+      },
+      "PipelineStateDef": {
+        "type": "object",
+        "properties": {
+          "agent_role": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "terminal": { "type": ["boolean", "null"] },
+          "workflow_id": { "type": ["string", "null"] }
+        }
+      },
+      "PipelineTransitionDef": {
+        "type": "object",
+        "required": ["from", "to", "trigger"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "trigger": { "type": "string" },
+          "instructions": { "type": ["string", "null"] },
+          "required_gates": { "type": ["array", "null"], "items": { "type": "string" } }
+        }
+      },
+      "PipelineDefinition": {
+        "type": "object",
+        "required": ["initial", "states", "transitions"],
+        "properties": {
+          "initial": { "type": "string" },
+          "states": { "type": "object", "additionalProperties": { "$ref": "#/components/schemas/PipelineStateDef" } },
+          "transitions": { "type": "array", "items": { "$ref": "#/components/schemas/PipelineTransitionDef" } }
+        }
+      },
+      "PipelineCreateRequest": {
+        "type": "object",
+        "required": ["name", "definition"],
+        "properties": {
+          "name": { "type": "string" },
+          "definition": { "$ref": "#/components/schemas/PipelineDefinition" }
+        }
+      },
+      "Pipeline": {
+        "type": "object",
+        "required": ["id", "name", "definition", "created_at_ms"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "definition": { "$ref": "#/components/schemas/PipelineDefinition" },
+          "created_at_ms": { "type": "integer" }
+        }
+      },
+      "TaskCreateRequest": {
+        "type": "object",
+        "required": ["pipeline_id", "title", "description"],
+        "properties": {
+          "pipeline_id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "priority": { "type": "integer" },
+          "metadata": { "type": ["object", "null"], "additionalProperties": true },
+          "retry_policy": { "$ref": "#/components/schemas/RetryPolicy" },
+          "dependencies": { "type": ["array", "null"], "items": { "type": "string" } },
+          "assigned_agent_id": { "type": ["string", "null"] },
+          "assigned_by": { "type": ["string", "null"] }
+        }
+      },
+      "BulkTaskCreateRequest": {
+        "type": "object",
+        "required": ["tasks"],
+        "properties": {
+          "tasks": { "type": "array", "items": { "$ref": "#/components/schemas/TaskCreateRequest" }, "minItems": 1 }
+        }
+      },
+      "BulkTaskCreateResponse": {
+        "type": "object",
+        "required": ["ids"],
+        "properties": {
+          "ids": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "required": ["id", "pipeline_id", "stage", "title", "description", "priority", "metadata", "task_version", "next_eligible_at_ms", "retry_delay_ms", "created_at_ms", "updated_at_ms"],
+        "properties": {
+          "id": { "type": "string" },
+          "pipeline_id": { "type": "string" },
+          "stage": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "priority": { "type": "integer" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "task_version": { "type": "integer" },
+          "next_eligible_at_ms": { "type": "integer" },
+          "max_attempts": { "type": ["integer", "null"] },
+          "retry_delay_ms": { "type": "integer" },
+          "dead_letter_stage": { "type": ["string", "null"] },
+          "dead_letter_reason": { "type": ["string", "null"] },
+          "created_at_ms": { "type": "integer" },
+          "updated_at_ms": { "type": "integer" }
+        }
+      },
+      "PaginatedTasks": {
+        "type": "object",
+        "required": ["items", "next_cursor"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
+          "next_cursor": { "type": ["string", "null"] }
+        }
+      },
+      "DependencyCreateRequest": {
+        "type": "object",
+        "required": ["depends_on_task_id"],
+        "properties": { "depends_on_task_id": { "type": "string" } }
+      },
+      "Dependency": {
+        "type": "object",
+        "required": ["depends_on_task_id", "resolved"],
+        "properties": {
+          "depends_on_task_id": { "type": "string" },
+          "resolved": { "type": "boolean" }
+        }
+      },
+      "AssignmentCreateRequest": {
+        "type": "object",
+        "required": ["agent_id"],
+        "properties": {
+          "agent_id": { "type": "string" },
+          "assigned_by": { "type": ["string", "null"] }
+        }
+      },
+      "Assignment": {
+        "type": "object",
+        "required": ["task_id", "agent_id", "active", "created_at_ms", "updated_at_ms"],
+        "properties": {
+          "task_id": { "type": "string" },
+          "agent_id": { "type": "string" },
+          "assigned_by": { "type": ["string", "null"] },
+          "active": { "type": "boolean" },
+          "created_at_ms": { "type": "integer" },
+          "updated_at_ms": { "type": "integer" }
+        }
+      },
+      "Run": {
+        "type": "object",
+        "required": ["id", "task_id", "attempt", "status", "agent_id", "agent_role", "started_at_ms", "ended_at_ms"],
+        "properties": {
+          "id": { "type": "string" },
+          "task_id": { "type": "string" },
+          "attempt": { "type": "integer" },
+          "status": { "type": "string" },
+          "agent_id": { "type": ["string", "null"] },
+          "agent_role": { "type": ["string", "null"] },
+          "started_at_ms": { "type": ["integer", "null"] },
+          "ended_at_ms": { "type": ["integer", "null"] }
+        }
+      },
+      "AvailableTransition": {
+        "type": "object",
+        "required": ["trigger", "to", "required_gates"],
+        "properties": {
+          "trigger": { "type": "string" },
+          "to": { "type": "string" },
+          "required_gates": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "TaskDetails": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Task" },
+          {
+            "type": "object",
+            "properties": {
+              "latest_run": { "$ref": "#/components/schemas/Run" },
+              "dependencies": { "type": "array", "items": { "$ref": "#/components/schemas/Dependency" } },
+              "assignments": { "type": "array", "items": { "$ref": "#/components/schemas/Assignment" } },
+              "available_transitions": { "type": "array", "items": { "$ref": "#/components/schemas/AvailableTransition" } }
+            }
+          }
+        ]
+      },
+      "LeaseClaimRequest": {
+        "type": "object",
+        "required": ["agent_id", "agent_role"],
+        "properties": {
+          "agent_id": { "type": "string" },
+          "agent_role": { "type": "string" },
+          "lease_ttl_ms": { "type": "integer" },
+          "concurrency": {
+            "type": ["object", "null"],
+            "properties": {
+              "per_state": {
+                "type": ["object", "null"],
+                "description": "Map of state name to max concurrent leased tasks",
+                "additionalProperties": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "ClaimResponse": {
+        "type": "object",
+        "required": ["task", "run", "lease_id", "lease_token", "expires_at_ms"],
+        "properties": {
+          "task": { "$ref": "#/components/schemas/Task" },
+          "run": { "$ref": "#/components/schemas/Run" },
+          "lease_id": { "type": "string" },
+          "lease_token": { "type": "string" },
+          "expires_at_ms": { "type": "integer" }
+        }
+      },
+      "EventCreateRequest": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "type": "string" },
+          "data": { "type": ["object", "null"], "additionalProperties": true }
+        }
+      },
+      "RunEvent": {
+        "type": "object",
+        "required": ["id", "run_id", "ts_ms", "kind", "data"],
+        "properties": {
+          "id": { "type": "integer" },
+          "run_id": { "type": "string" },
+          "ts_ms": { "type": "integer" },
+          "kind": { "type": "string" },
+          "data": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "PaginatedRunEvents": {
+        "type": "object",
+        "required": ["items", "next_cursor"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/RunEvent" } },
+          "next_cursor": { "type": ["string", "null"] }
+        }
+      },
+      "TransitionRequest": {
+        "type": "object",
+        "required": ["trigger"],
+        "properties": {
+          "trigger": { "type": "string" },
+          "instructions": { "type": ["string", "null"] },
+          "usage": { "type": ["object", "null"], "additionalProperties": true },
+          "expected_stage": { "type": ["string", "null"] },
+          "expected_task_version": { "type": ["integer", "null"] }
+        }
+      },
+      "TransitionResponse": {
+        "type": "object",
+        "required": ["previous_stage", "new_stage", "trigger"],
+        "properties": {
+          "previous_stage": { "type": "string" },
+          "new_stage": { "type": "string" },
+          "trigger": { "type": "string" }
+        }
+      },
+      "FailRequest": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" },
+          "usage": { "type": ["object", "null"], "additionalProperties": true }
+        }
+      },
+      "ArtifactCreateRequest": {
+        "type": "object",
+        "required": ["kind", "uri"],
+        "properties": {
+          "task_id": { "type": ["string", "null"] },
+          "run_id": { "type": ["string", "null"] },
+          "kind": { "type": "string" },
+          "uri": { "type": "string" },
+          "sha256": { "type": ["string", "null"] },
+          "size_bytes": { "type": ["integer", "null"] },
+          "meta": { "type": ["object", "null"], "additionalProperties": true }
+        }
+      },
+      "Artifact": {
+        "type": "object",
+        "required": ["id", "task_id", "run_id", "created_at_ms", "kind", "uri", "sha256", "size_bytes", "meta"],
+        "properties": {
+          "id": { "type": "string" },
+          "task_id": { "type": ["string", "null"] },
+          "run_id": { "type": ["string", "null"] },
+          "created_at_ms": { "type": "integer" },
+          "kind": { "type": "string" },
+          "uri": { "type": "string" },
+          "sha256": { "type": ["string", "null"] },
+          "size_bytes": { "type": ["integer", "null"] },
+          "meta": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "PaginatedArtifacts": {
+        "type": "object",
+        "required": ["items", "next_cursor"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Artifact" } },
+          "next_cursor": { "type": ["string", "null"] }
+        }
+      },
+      "QueueRoleStats": {
+        "type": "object",
+        "required": ["role", "claimable_count", "oldest_claimable_age_ms", "failed_count", "stuck_count", "near_expiry_leases"],
+        "properties": {
+          "role": { "type": "string" },
+          "claimable_count": { "type": "integer" },
+          "oldest_claimable_age_ms": { "type": ["integer", "null"] },
+          "failed_count": { "type": "integer" },
+          "stuck_count": { "type": "integer" },
+          "near_expiry_leases": { "type": "integer" }
+        }
+      },
+      "QueueOpsResponse": {
+        "type": "object",
+        "required": ["roles", "generated_at_ms"],
+        "properties": {
+          "roles": { "type": "array", "items": { "$ref": "#/components/schemas/QueueRoleStats" } },
+          "generated_at_ms": { "type": "integer" }
+        }
+      },
+      "StorePutRequest": {
+        "type": "object",
+        "required": ["value"],
+        "properties": {
+          "value": {}
+        }
+      },
+      "StoreEntry": {
+        "type": "object",
+        "required": ["namespace", "key", "value", "created_at_ms", "updated_at_ms"],
+        "properties": {
+          "namespace": { "type": "string" },
+          "key": { "type": "string" },
+          "value": {},
+          "created_at_ms": { "type": "integer" },
+          "updated_at_ms": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,663 @@
+const std = @import("std");
+const builtin = @import("builtin");
+const std_compat = @import("compat.zig");
+const Store = @import("store.zig").Store;
+const api = @import("api.zig");
+const config = @import("config.zig");
+const engine_mod = @import("engine.zig");
+const strategy_mod = @import("strategy.zig");
+const ids = @import("ids.zig");
+const metrics_mod = @import("metrics.zig");
+const worker_protocol = @import("worker_protocol.zig");
+const async_dispatch = @import("async_dispatch.zig");
+const redis_client = @import("redis_client.zig");
+const mqtt_client = @import("mqtt_client.zig");
+const tracker_mod = @import("tracker.zig");
+const workflow_loader = @import("workflow_loader.zig");
+const sse_mod = @import("sse.zig");
+const c = @cImport({
+    @cInclude("signal.h");
+});
+
+const version = "2026.3.2";
+const max_request_size: usize = 8 * 1024 * 1024;
+const request_read_chunk: usize = 4096;
+var shutdown_requested = std.atomic.Value(bool).init(false);
+
+fn onSignal(sig: c_int) callconv(.c) void {
+    _ = sig;
+    shutdown_requested.store(true, .seq_cst);
+}
+
+pub fn main(init: std.process.Init) !void {
+    std_compat.initProcess(init);
+    const allocator = std.heap.smp_allocator;
+
+    const args = try std_compat.process.argsAlloc(allocator);
+    defer std_compat.process.argsFree(allocator, args);
+    const all_args = if (args.len > 0) args[1..] else &.{};
+
+    // Check for manifest protocol flags first (early exit, no config needed)
+    if (all_args.len >= 1) {
+        if (std.mem.eql(u8, all_args[0], "--export-manifest")) {
+            try @import("export_manifest.zig").run();
+            return;
+        }
+        if (std.mem.eql(u8, all_args[0], "--from-json")) {
+            try @import("from_json.zig").run(allocator, all_args[1..]);
+            return;
+        }
+    }
+
+    var host_override: ?[]const u8 = null;
+    var port_override: ?u16 = null;
+    var db_override: ?[:0]const u8 = null;
+    var token_override: ?[]const u8 = null;
+    var config_path_override: ?[]const u8 = null;
+
+    var i: usize = 0;
+    while (i < all_args.len) : (i += 1) {
+        const arg = all_args[i];
+        if (std.mem.eql(u8, arg, "--host")) {
+            i += 1;
+            if (i < all_args.len) {
+                host_override = all_args[i];
+            }
+        } else if (std.mem.eql(u8, arg, "--port")) {
+            i += 1;
+            if (i < all_args.len) {
+                port_override = std.fmt.parseInt(u16, all_args[i], 10) catch {
+                    std.debug.print("invalid port: {s}\n", .{all_args[i]});
+                    return;
+                };
+            }
+        } else if (std.mem.eql(u8, arg, "--db")) {
+            i += 1;
+            if (i < all_args.len) {
+                db_override = all_args[i];
+            }
+        } else if (std.mem.eql(u8, arg, "--token")) {
+            i += 1;
+            if (i < all_args.len) {
+                token_override = all_args[i];
+            }
+        } else if (std.mem.eql(u8, arg, "--config")) {
+            i += 1;
+            if (i < all_args.len) {
+                config_path_override = all_args[i];
+            }
+        } else if (std.mem.eql(u8, arg, "--version")) {
+            std.debug.print("aizen-orchestrate v{s}\n", .{version});
+            return;
+        }
+    }
+
+    // Load configuration
+    var cfg_arena = std.heap.ArenaAllocator.init(allocator);
+    defer cfg_arena.deinit();
+    const config_path = config.resolveConfigPath(cfg_arena.allocator(), config_path_override) catch |err| {
+        std.debug.print("failed to resolve config path: {}\n", .{err});
+        return;
+    };
+    var cfg = config.loadFromFile(cfg_arena.allocator(), config_path) catch |err| {
+        std.debug.print("failed to load config from {s}: {}\n", .{ config_path, err });
+        return;
+    };
+    config.resolveRelativePaths(cfg_arena.allocator(), config_path, &cfg) catch |err| {
+        std.debug.print("failed to resolve config paths from {s}: {}\n", .{ config_path, err });
+        return;
+    };
+
+    var strategy_map = strategy_mod.loadStrategies(cfg_arena.allocator(), cfg.strategies_dir);
+
+    // Determine bind host, port, and db path (CLI overrides config)
+    const bind_host = host_override orelse cfg.host;
+    const port = port_override orelse cfg.port;
+    const api_token = token_override orelse cfg.api_token;
+    const db_path: [:0]const u8 = db_override orelse blk: {
+        // Need to convert cfg.db ([]const u8) to [:0]const u8
+        const db_z = cfg_arena.allocator().allocSentinel(u8, cfg.db.len, 0) catch {
+            std.debug.print("out of memory\n", .{});
+            return;
+        };
+        @memcpy(db_z, cfg.db);
+        break :blk db_z;
+    };
+
+    std.debug.print("aizen-orchestrate v{s}\n", .{version});
+    std.debug.print("opening database: {s}\n", .{db_path});
+    if (api_token != null) {
+        std.debug.print("API auth: bearer token enabled\n", .{});
+    } else {
+        std.debug.print("API auth: disabled\n", .{});
+    }
+
+    ensureParentDirForFile(db_path) catch |err| {
+        std.debug.print("failed to create database directory for {s}: {}\n", .{ db_path, err });
+        return;
+    };
+
+    var store = try Store.init(allocator, db_path);
+    defer store.deinit();
+    var metrics = metrics_mod.Metrics{};
+    var drain_mode = std.atomic.Value(bool).init(false);
+
+    var sse_hub = sse_mod.SseHub.init(allocator);
+    defer sse_hub.deinit();
+
+    var response_queue = async_dispatch.ResponseQueue.init(allocator);
+    defer response_queue.deinit();
+
+    // Seed workers from config
+    store.deleteWorkersBySource("config") catch |err| {
+        std.debug.print("warning: failed to clean config workers: {}\n", .{err});
+    };
+
+    for (cfg.workers) |w| {
+        const protocol = worker_protocol.parse(w.protocol) orelse {
+            std.debug.print("warning: skipped config worker {s}: unsupported protocol {s}\n", .{ w.id, w.protocol });
+            continue;
+        };
+
+        if (worker_protocol.requiresModel(protocol) and w.model == null) {
+            std.debug.print("warning: skipped config worker {s}: openai_chat protocol requires model\n", .{w.id});
+            continue;
+        }
+        if (!worker_protocol.validateUrlForProtocol(w.url, protocol)) {
+            std.debug.print("warning: skipped config worker {s}: webhook protocol requires explicit URL path (for example /webhook)\n", .{w.id});
+            continue;
+        }
+        if (protocol == .mqtt) {
+            _ = worker_protocol.parseMqttUrl(cfg_arena.allocator(), w.url) catch {
+                std.debug.print("warning: skipped config worker {s}: invalid mqtt:// URL (expected mqtt://host:port/topic)\n", .{w.id});
+                continue;
+            };
+        }
+        if (protocol == .redis_stream) {
+            _ = worker_protocol.parseRedisUrl(cfg_arena.allocator(), w.url) catch {
+                std.debug.print("warning: skipped config worker {s}: invalid redis:// URL (expected redis://host:port/stream)\n", .{w.id});
+                continue;
+            };
+        }
+
+        // Serialize tags to JSON array string
+        const tags_json = serializeTagsJson(cfg_arena.allocator(), w.tags) catch |err| {
+            std.debug.print("warning: failed to serialize tags for worker {s}: {}\n", .{ w.id, err });
+            continue;
+        };
+
+        store.insertWorker(w.id, w.url, w.token, w.protocol, w.model, tags_json, @intCast(w.max_concurrent), "config") catch |err| {
+            std.debug.print("warning: failed to insert config worker {s}: {}\n", .{ w.id, err });
+        };
+        std.debug.print("registered config worker: {s}\n", .{w.id});
+    }
+
+    // Build listener configs for async protocols
+    var mqtt_configs: std.ArrayListUnmanaged(mqtt_client.ListenerConfig) = .empty;
+    var redis_configs: std.ArrayListUnmanaged(redis_client.ListenerConfig) = .empty;
+
+    for (cfg.workers) |w| {
+        const protocol = worker_protocol.parse(w.protocol) orelse continue;
+        if (protocol == .mqtt) {
+            const parts = worker_protocol.parseMqttUrl(cfg_arena.allocator(), w.url) catch continue;
+            const host_z = cfg_arena.allocator().dupeZ(u8, parts.host) catch continue;
+            const resp_z = cfg_arena.allocator().dupeZ(u8, parts.response_topic) catch continue;
+            mqtt_configs.append(cfg_arena.allocator(), .{
+                .host = host_z,
+                .port = parts.port,
+                .response_topic = resp_z,
+            }) catch continue;
+        } else if (protocol == .redis_stream) {
+            const parts = worker_protocol.parseRedisUrl(cfg_arena.allocator(), w.url) catch continue;
+            const host_z = cfg_arena.allocator().dupeZ(u8, parts.host) catch continue;
+            const resp_z = cfg_arena.allocator().dupeZ(u8, parts.response_stream) catch continue;
+            const group_z = cfg_arena.allocator().dupeZ(u8, "aizen-orchestrate") catch continue;
+            redis_configs.append(cfg_arena.allocator(), .{
+                .host = host_z,
+                .port = parts.port,
+                .response_stream = resp_z,
+                .consumer_group = group_z,
+            }) catch continue;
+        }
+    }
+
+    const addr = std.Io.net.IpAddress.resolve(std_compat.io(), bind_host, port) catch |err| {
+        std.debug.print("failed to resolve bind address {s}:{d}: {}\n", .{ bind_host, port, err });
+        return;
+    };
+    var server = addr.listen(std_compat.io(), .{ .reuse_address = true }) catch |err| {
+        std.debug.print("failed to listen on {s}:{d}: {}\n", .{ bind_host, port, err });
+        return;
+    };
+    defer server.deinit(std_compat.io());
+
+    // SIGINT/SIGTERM should switch process into drain/shutdown mode.
+    _ = c.signal(c.SIGINT, onSignal);
+    _ = c.signal(c.SIGTERM, onSignal);
+
+    // Start DAG engine on a background thread
+    const poll_ms: u64 = cfg.engine.poll_interval_ms;
+    // Hot reload watcher for workflow definitions
+    var wf_watcher: ?workflow_loader.WorkflowWatcher = null;
+    if (cfg.tracker) |tracker_cfg| {
+        if (tracker_cfg.workflows_dir.len > 0) {
+            wf_watcher = workflow_loader.WorkflowWatcher.init(allocator, tracker_cfg.workflows_dir, &store);
+        }
+    }
+
+    var engine = engine_mod.Engine.init(&store, allocator, poll_ms);
+    engine.configure(.{
+        .health_check_interval_ms = @as(i64, @intCast(cfg.engine.health_check_interval_ms)),
+        .worker_failure_threshold = @as(i64, @intCast(cfg.engine.worker_failure_threshold)),
+        .worker_circuit_breaker_ms = @as(i64, @intCast(cfg.engine.worker_circuit_breaker_ms)),
+        .retry_base_delay_ms = @as(i64, @intCast(cfg.engine.retry_base_delay_ms)),
+        .retry_max_delay_ms = @as(i64, @intCast(cfg.engine.retry_max_delay_ms)),
+        .retry_jitter_ms = @as(i64, @intCast(cfg.engine.retry_jitter_ms)),
+        .retry_max_elapsed_ms = @as(i64, @intCast(cfg.engine.retry_max_elapsed_ms)),
+    }, &metrics);
+    if (cfg.tracker) |tracker_cfg| {
+        engine.setTrustedTrackerAccess(tracker_cfg.url, tracker_cfg.api_token);
+    }
+    engine.response_queue = &response_queue;
+    if (wf_watcher != null) {
+        engine.workflow_watcher = &wf_watcher.?;
+    }
+    const engine_thread = try std.Thread.spawn(.{}, engine_mod.Engine.run, .{&engine});
+
+    // Spawn listener threads for async protocols
+    var mqtt_listener_thread: ?std.Thread = null;
+    var redis_listener_thread: ?std.Thread = null;
+
+    if (mqtt_configs.items.len > 0) {
+        mqtt_listener_thread = std.Thread.spawn(.{}, mqtt_client.runListener, .{
+            &response_queue,
+            &shutdown_requested,
+            mqtt_configs.items,
+        }) catch |err| blk: {
+            std.debug.print("warning: failed to start MQTT listener: {}\n", .{err});
+            break :blk null;
+        };
+        if (mqtt_listener_thread != null) {
+            std.debug.print("mqtt listener started ({d} response topics)\n", .{mqtt_configs.items.len});
+        }
+    }
+
+    if (redis_configs.items.len > 0) {
+        redis_listener_thread = std.Thread.spawn(.{}, redis_client.runListener, .{
+            &response_queue,
+            &shutdown_requested,
+            redis_configs.items,
+        }) catch |err| blk: {
+            std.debug.print("warning: failed to start Redis listener: {}\n", .{err});
+            break :blk null;
+        };
+        if (redis_listener_thread != null) {
+            std.debug.print("redis listener started ({d} response streams)\n", .{redis_configs.items.len});
+        }
+    }
+
+    // Start Tracker thread for pull-mode (conditionally)
+    var tracker_instance: ?tracker_mod.Tracker = null;
+    var tracker_thread: ?std.Thread = null;
+
+    if (cfg.tracker) |tracker_cfg| {
+        if (tracker_cfg.url != null) {
+            const workflows = workflow_loader.loadWorkflows(cfg_arena.allocator(), tracker_cfg.workflows_dir);
+
+            tracker_instance = tracker_mod.Tracker.init(
+                allocator,
+                tracker_cfg,
+                workflows,
+                &store,
+                &shutdown_requested,
+            );
+
+            tracker_thread = std.Thread.spawn(.{}, tracker_mod.Tracker.run, .{&tracker_instance.?}) catch |err| blk: {
+                std.debug.print("warning: failed to start tracker thread: {}\n", .{err});
+                break :blk null;
+            };
+
+            if (tracker_thread != null) {
+                std.debug.print("tracker started (poll_interval={d}ms, workflows_dir={s})\n", .{
+                    tracker_cfg.poll_interval_ms,
+                    tracker_cfg.workflows_dir,
+                });
+            }
+        }
+    }
+
+    std.debug.print("listening on http://{s}:{d}\n", .{ bind_host, port });
+    std.debug.print("engine started (poll_interval={d}ms)\n", .{poll_ms});
+
+    defer {
+        engine.stop();
+        engine_thread.join();
+        std.debug.print("engine stopped\n", .{});
+        if (mqtt_listener_thread) |t| {
+            t.join();
+            std.debug.print("mqtt listener stopped\n", .{});
+        }
+        if (redis_listener_thread) |t| {
+            t.join();
+            std.debug.print("redis listener stopped\n", .{});
+        }
+        if (tracker_thread) |t| {
+            t.join();
+            std.debug.print("tracker stopped\n", .{});
+        }
+        if (tracker_instance) |*ti| {
+            ti.deinit();
+        }
+        if (wf_watcher) |*ww| {
+            ww.deinit();
+        }
+    }
+
+    while (true) {
+        if (shutdown_requested.load(.acquire)) {
+            drain_mode.store(true, .release);
+            std.debug.print("shutdown signal received, draining runs\n", .{});
+            break;
+        }
+
+        if (builtin.os.tag != .windows) {
+            var poll_fds = [_]std.posix.pollfd{
+                .{
+                    .fd = server.socket.handle,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                },
+            };
+            const ready = std.posix.poll(&poll_fds, 50) catch {
+                std_compat.thread.sleep(50 * std.time.ns_per_ms);
+                continue;
+            };
+            if (ready == 0) continue;
+        }
+
+        var conn = server.accept(std_compat.io()) catch |err| {
+            std.debug.print("accept error: {}\n", .{err});
+            continue;
+        };
+        defer conn.close(std_compat.io());
+
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const req_alloc = arena.allocator();
+
+        const request = readHttpRequest(req_alloc, &conn, max_request_size) catch |err| {
+            std.debug.print("request read error: {}\n", .{err});
+            continue;
+        } orelse continue;
+
+        var ctx = api.Context{
+            .store = &store,
+            .allocator = req_alloc,
+            .required_api_token = api_token,
+            .request_bearer_token = request.bearer_token,
+            .request_idempotency_key = request.idempotency_key,
+            .request_id = request.request_id,
+            .traceparent = request.traceparent,
+            .metrics = &metrics,
+            .drain_mode = &drain_mode,
+            .strategies = &strategy_map,
+            .tracker_state = if (tracker_instance) |*ti| &ti.state else null,
+            .tracker_cfg = if (cfg.tracker) |*tc| tc else null,
+            .sse_hub = &sse_hub,
+            .rate_limits = &engine.rate_limits,
+        };
+        const response = api.handleRequest(&ctx, request.method, request.target, request.body);
+
+        const header = std.fmt.allocPrint(req_alloc, "HTTP/1.1 {s}\r\nContent-Type: {s}\r\nX-Request-Id: {s}\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{ response.status, response.content_type, request.request_id, response.body.len }) catch continue;
+
+        var write_buffer: [4096]u8 = undefined;
+        var writer = conn.writer(std_compat.io(), &write_buffer);
+        writer.interface.writeAll(header) catch continue;
+        writer.interface.writeAll(response.body) catch continue;
+        writer.interface.flush() catch continue;
+    }
+
+    const drain_deadline = ids.nowMs() + @as(i64, @intCast(cfg.engine.shutdown_grace_ms));
+    while (ids.nowMs() < drain_deadline) {
+        var drain_arena = std.heap.ArenaAllocator.init(allocator);
+        defer drain_arena.deinit();
+        const active = store.getActiveRuns(drain_arena.allocator()) catch break;
+        if (active.len == 0) break;
+        std_compat.thread.sleep(200 * std.time.ns_per_ms);
+    }
+}
+
+fn ensureParentDirForFile(path: []const u8) !void {
+    if (path.len == 0 or std.mem.eql(u8, path, ":memory:") or std.mem.startsWith(u8, path, "file:")) return;
+
+    const parent = std.fs.path.dirname(path) orelse return;
+    if (parent.len == 0) return;
+
+    if (std.fs.path.isAbsolute(parent)) {
+        std_compat.fs.makeDirAbsolute(parent) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+        return;
+    }
+
+    try std_compat.fs.cwd().makePath(parent);
+}
+
+fn serializeTagsJson(allocator: std.mem.Allocator, tags: []const []const u8) ![]const u8 {
+    return std.json.Stringify.valueAlloc(allocator, tags, .{});
+}
+
+const ParsedHttpRequest = struct {
+    method: []const u8,
+    target: []const u8,
+    body: []const u8,
+    bearer_token: ?[]const u8,
+    idempotency_key: ?[]const u8,
+    request_id: []const u8,
+    traceparent: ?[]const u8,
+};
+
+fn readHttpRequest(allocator: std.mem.Allocator, stream: *std.Io.net.Stream, max_bytes: usize) !?ParsedHttpRequest {
+    var buffer: std.ArrayListUnmanaged(u8) = .empty;
+    defer buffer.deinit(allocator);
+
+    var header_end: ?usize = null;
+    var content_len: usize = 0;
+    var read_buffer: [request_read_chunk]u8 = undefined;
+    var reader = stream.reader(std_compat.io(), &read_buffer);
+    var chunk: [request_read_chunk]u8 = undefined;
+
+    while (true) {
+        const n = try reader.interface.readSliceShort(&chunk);
+        if (n == 0) return null;
+
+        try buffer.appendSlice(allocator, chunk[0..n]);
+        if (buffer.items.len > max_bytes) return error.RequestTooLarge;
+
+        if (header_end == null) {
+            const hdr_end = std.mem.indexOf(u8, buffer.items, "\r\n\r\n") orelse continue;
+            header_end = hdr_end;
+            content_len = parseContentLength(buffer.items[0..hdr_end]) orelse return error.InvalidContentLength;
+
+            const required = hdr_end + 4 + content_len;
+            if (required > max_bytes) return error.RequestTooLarge;
+            if (buffer.items.len >= required) break;
+            continue;
+        }
+
+        const required = header_end.? + 4 + content_len;
+        if (buffer.items.len >= required) break;
+    }
+
+    const req_total = header_end.? + 4 + content_len;
+    const req_bytes = try allocator.dupe(u8, buffer.items[0..req_total]);
+
+    const first_line_end = std.mem.indexOf(u8, req_bytes, "\r\n") orelse return error.InvalidRequestLine;
+    const first_line = req_bytes[0..first_line_end];
+    var parts = std.mem.splitScalar(u8, first_line, ' ');
+
+    const method = parts.next() orelse return error.InvalidRequestLine;
+    const target = parts.next() orelse return error.InvalidRequestLine;
+    const body = req_bytes[header_end.? + 4 .. req_total];
+    const headers_raw = req_bytes[0..header_end.?];
+    const bearer_token = parseBearerToken(headers_raw);
+    const idempotency_key = parseHeaderValue(headers_raw, "Idempotency-Key");
+    const traceparent = parseHeaderValue(headers_raw, "Traceparent");
+    const request_id = parseHeaderValue(headers_raw, "X-Request-Id") orelse blk: {
+        const rid_buf = ids.generateId();
+        break :blk try allocator.dupe(u8, &rid_buf);
+    };
+
+    return .{
+        .method = method,
+        .target = target,
+        .body = body,
+        .bearer_token = bearer_token,
+        .idempotency_key = idempotency_key,
+        .request_id = request_id,
+        .traceparent = traceparent,
+    };
+}
+
+fn parseContentLength(headers_raw: []const u8) ?usize {
+    var lines = std.mem.splitSequence(u8, headers_raw, "\r\n");
+    _ = lines.next(); // request line
+
+    while (lines.next()) |line| {
+        if (line.len == 0) break;
+
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const name = std.mem.trim(u8, line[0..colon], " \t");
+        if (!std.ascii.eqlIgnoreCase(name, "Content-Length")) continue;
+
+        const raw_value = std.mem.trim(u8, line[colon + 1 ..], " \t");
+        return std.fmt.parseInt(usize, raw_value, 10) catch null;
+    }
+
+    return 0;
+}
+
+fn parseBearerToken(headers_raw: []const u8) ?[]const u8 {
+    const raw_value = parseHeaderValue(headers_raw, "Authorization") orelse return null;
+    const space_idx = std.mem.indexOfScalar(u8, raw_value, ' ') orelse return null;
+    const scheme = std.mem.trim(u8, raw_value[0..space_idx], " \t");
+    if (!std.ascii.eqlIgnoreCase(scheme, "Bearer")) return null;
+
+    const token = std.mem.trim(u8, raw_value[space_idx + 1 ..], " \t");
+    if (token.len == 0) return null;
+    return token;
+}
+
+fn parseHeaderValue(headers_raw: []const u8, name_query: []const u8) ?[]const u8 {
+    var lines = std.mem.splitSequence(u8, headers_raw, "\r\n");
+    _ = lines.next(); // request line
+
+    while (lines.next()) |line| {
+        if (line.len == 0) break;
+
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const name = std.mem.trim(u8, line[0..colon], " \t");
+        if (!std.ascii.eqlIgnoreCase(name, name_query)) continue;
+        return std.mem.trim(u8, line[colon + 1 ..], " \t");
+    }
+    return null;
+}
+
+test "serializeTagsJson escapes special chars" {
+    const allocator = std.testing.allocator;
+    const tags = [_][]const u8{
+        "dev\"ops",
+        "path\\with\\slashes",
+        "line\nbreak",
+    };
+
+    const got = try serializeTagsJson(allocator, &tags);
+    defer allocator.free(got);
+
+    try std.testing.expectEqualStrings("[\"dev\\\"ops\",\"path\\\\with\\\\slashes\",\"line\\nbreak\"]", got);
+}
+
+test "parseContentLength returns zero when missing header" {
+    const headers = "POST /runs HTTP/1.1\r\n" ++
+        "Host: localhost\r\n" ++
+        "Content-Type: application/json";
+    try std.testing.expectEqual(@as(?usize, 0), parseContentLength(headers));
+}
+
+test "parseContentLength parses header case-insensitively with whitespace" {
+    const headers = "POST /runs HTTP/1.1\r\n" ++
+        "Host: localhost\r\n" ++
+        "content-length:   123  ";
+    try std.testing.expectEqual(@as(?usize, 123), parseContentLength(headers));
+}
+
+test "parseContentLength returns null for invalid number" {
+    const headers = "POST /runs HTTP/1.1\r\n" ++
+        "Host: localhost\r\n" ++
+        "Content-Length: not-a-number";
+    try std.testing.expectEqual(@as(?usize, null), parseContentLength(headers));
+}
+
+test "parseBearerToken extracts bearer token from Authorization header" {
+    const headers = "POST /runs HTTP/1.1\r\n" ++
+        "Host: localhost\r\n" ++
+        "Authorization: Bearer token-123\r\n" ++
+        "Content-Length: 0";
+    const token = parseBearerToken(headers);
+    try std.testing.expect(token != null);
+    try std.testing.expectEqualStrings("token-123", token.?);
+}
+
+test "parseBearerToken returns null for malformed Authorization header" {
+    const headers = "POST /runs HTTP/1.1\r\n" ++
+        "Host: localhost\r\n" ++
+        "Authorization: Basic abc\r\n" ++
+        "Content-Length: 0";
+    try std.testing.expectEqual(@as(?[]const u8, null), parseBearerToken(headers));
+}
+
+test "parseBearerToken accepts case-insensitive bearer scheme" {
+    const headers = "POST /runs HTTP/1.1\r\n" ++
+        "Host: localhost\r\n" ++
+        "Authorization: bearer token-xyz\r\n" ++
+        "Content-Length: 0";
+    const token = parseBearerToken(headers);
+    try std.testing.expect(token != null);
+    try std.testing.expectEqualStrings("token-xyz", token.?);
+}
+
+test "worker_protocol hasExplicitPath identifies explicit path URLs" {
+    try std.testing.expect(!worker_protocol.hasExplicitPath("http://localhost:3000"));
+    try std.testing.expect(!worker_protocol.hasExplicitPath("http://localhost:3000/"));
+    try std.testing.expect(worker_protocol.hasExplicitPath("http://localhost:3000/webhook"));
+}
+
+comptime {
+    _ = @import("ids.zig");
+    _ = @import("types.zig");
+    _ = @import("store.zig");
+    _ = @import("api.zig");
+    _ = @import("templates.zig");
+    _ = @import("dispatch.zig");
+    _ = @import("config.zig");
+    _ = @import("engine.zig");
+    _ = @import("callbacks.zig");
+    _ = @import("workflow_validation.zig");
+    _ = @import("worker_protocol.zig");
+    _ = @import("worker_response.zig");
+    _ = @import("metrics.zig");
+    _ = @import("export_manifest.zig");
+    _ = @import("from_json.zig");
+    _ = @import("strategy.zig");
+    _ = @import("async_dispatch.zig");
+    _ = @import("redis_client.zig");
+    _ = @import("mqtt_client.zig");
+    _ = @import("workflow_loader.zig");
+    _ = @import("workspace.zig");
+    _ = @import("subprocess.zig");
+    _ = @import("tracker_client.zig");
+    _ = @import("tracker.zig");
+    _ = @import("state.zig");
+    _ = @import("sse.zig");
+}

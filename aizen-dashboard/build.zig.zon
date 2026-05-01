@@ -1,0 +1,12 @@
+.{
+    .name = .aizen-dashboard,
+    .version = "2026.4.17",
+    .fingerprint = 0x8708b11cb233b548,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
