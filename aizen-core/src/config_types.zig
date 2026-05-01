@@ -1694,6 +1694,16 @@ pub const SecurityConfig = struct {
     sandbox: SandboxConfig = .{},
     resources: ResourceLimitsConfig = .{},
     audit: AuditConfig = .{},
+    /// Agent Card (/.well-known/agent.json) exposure control.
+    /// When false (default), the agent card endpoint returns 404.
+    /// When true, the agent card is served if a2a.enabled is also true.
+    agent_card: AgentCardSecurityConfig = .{},
+};
+
+pub const AgentCardSecurityConfig = struct {
+    /// Whether to expose the agent card at /.well-known/agent.json.
+    /// Default: false (secure-by-default, returns 404).
+    expose: bool = false,
 };
 
 // ── Delegate agent config ───────────────────────────────────────

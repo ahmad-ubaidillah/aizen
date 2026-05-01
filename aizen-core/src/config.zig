@@ -131,6 +131,7 @@ pub const SandboxConfig = config_types.SandboxConfig;
 pub const ResourceLimitsConfig = config_types.ResourceLimitsConfig;
 pub const AuditConfig = config_types.AuditConfig;
 pub const SecurityConfig = config_types.SecurityConfig;
+pub const AgentCardSecurityConfig = config_types.AgentCardSecurityConfig;
 pub const DelegateAgentConfig = config_types.DelegateAgentConfig;
 pub const NamedAgentConfig = config_types.NamedAgentConfig;
 pub const McpServerConfig = config_types.McpServerConfig;
@@ -1381,6 +1382,9 @@ pub const Config = struct {
                 .log_path = self.security.audit.log_path,
                 .max_size_mb = self.security.audit.max_size_mb,
                 .sign_events = self.security.audit.sign_events,
+            },
+            .agent_card = .{
+                .expose = self.security.agent_card.expose,
             },
         }, ",\n");
         try writePrettyField(self.allocator, w, "  ", "peripherals", .{

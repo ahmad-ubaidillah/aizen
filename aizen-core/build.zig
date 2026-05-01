@@ -362,10 +362,10 @@ fn ensureAndroidBuildEnvironment(b: *std.Build) void {
 }
 
 fn addEmbeddedWasm3(module: *std.Build.Module, b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
-    const wasm3_dep = b.dependency("wasm3", .{
+    const wasm3_dep = b.lazyDependency("wasm3", .{
         .target = target,
         .optimize = optimize,
-    });
+    }) orelse return;
     module.addIncludePath(wasm3_dep.path("source"));
     module.linkLibrary(wasm3_dep.artifact("wasm3"));
 }
@@ -375,7 +375,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const is_wasi = target.result.os.tag == .wasi;
     const is_static = b.option(bool, "static", "Static build") orelse false;
-    const enable_embedded_wasm3 = b.option(bool, "embedded_wasm3", "Embed wasm3 runtime into aizen binary (default: true; use -Dembedded_wasm3=false to disable)") orelse true;
+    const enable_embedded_wasm3 = b.option(bool, "embedded_wasm3", "Embed wasm3 runtime into aizen binary (default: false; use -Dembedded_wasm3=true to enable)") orelse false;
     const app_version = b.option([]const u8, "version", "Version string embedded in the binary") orelse "dev";
     const channels_raw = b.option(
         []const u8,
@@ -520,14 +520,7 @@ pub fn build(b: *std.Build) void {
         if (enable_postgres) {
             module.linkSystemLibrary("pq", .{});
         }
-        if (enable_channel_web) {
-            const ws_dep = b.dependency("websocket", .{
-                .target = target,
-                .optimize = optimize,
-            });
-            ws_dep.module("websocket").addImport("compat", compat_module);
-            module.addImport("websocket", ws_dep.module("websocket"));
-        }
+        // websocket dep removed — web channel uses built-in src/websocket.zig with compat module
         if (enable_embedded_wasm3) {
             addEmbeddedWasm3(module, b, target, optimize);
         }

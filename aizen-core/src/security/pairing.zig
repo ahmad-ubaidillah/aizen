@@ -379,21 +379,22 @@ fn isTruthyFlag(value: []const u8) bool {
 }
 
 pub fn isYoloForceEnabled(allocator: std.mem.Allocator) bool {
-    if (platform.getEnvOrNull(allocator, "AIZEN_ALLOW_YOLO")) |v| {
-        defer allocator.free(v);
-        if (isTruthyFlag(v)) return true;
-    }
-    if (platform.getEnvOrNull(allocator, "OPENCLAW_ALLOW_YOLO")) |v| {
-        defer allocator.free(v);
-        if (isTruthyFlag(v)) return true;
-    }
+    // NOTE: The AIZEN_ALLOW_YOLO and OPENCLAW_ALLOW_YOLO env var bypasses have been
+    // removed for security. YOLO mode is only allowed on loopback addresses.
+    // See isYoloGatewayAllowed().
+    _ = allocator;
     return false;
 }
 
-pub fn isYoloGatewayAllowed(level: policy.AutonomyLevel, host: []const u8, forced: bool) bool {
+pub fn isYoloGatewayAllowed(level: policy.AutonomyLevel, host: []const u8) bool {
     if (level != .yolo) return true;
-    if (forced) return true;
-    return !isPublicBind(host);
+    // YOLO mode is only permitted on loopback addresses.
+    // The env-var bypass (AIZEN_ALLOW_YOLO) has been removed for security.
+    if (!isPublicBind(host)) {
+        std.log.warn("YOLO mode active on loopback address '{s}' — all security checks bypassed", .{host});
+        return true;
+    }
+    return false;
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -746,23 +747,24 @@ test "is public bind empty string" {
 }
 
 test "isYoloGatewayAllowed rejects remote host without force" {
-    try std.testing.expect(!isYoloGatewayAllowed(.yolo, "0.0.0.0", false));
+    try std.testing.expect(!isYoloGatewayAllowed(.yolo, "0.0.0.0"));
 }
 
 test "isYoloGatewayAllowed allows loopback variants without force" {
-    try std.testing.expect(isYoloGatewayAllowed(.yolo, "127.0.0.1", false));
-    try std.testing.expect(isYoloGatewayAllowed(.yolo, "127.0.0.2", false));
-    try std.testing.expect(isYoloGatewayAllowed(.yolo, "LOCALHOST", false));
-    try std.testing.expect(isYoloGatewayAllowed(.yolo, "0:0:0:0:0:0:0:1", false));
-    try std.testing.expect(isYoloGatewayAllowed(.yolo, "[0:0:0:0:0:0:0:1]", false));
+    try std.testing.expect(isYoloGatewayAllowed(.yolo, "127.0.0.1"));
+    try std.testing.expect(isYoloGatewayAllowed(.yolo, "127.0.0.2"));
+    try std.testing.expect(isYoloGatewayAllowed(.yolo, "LOCALHOST"));
+    try std.testing.expect(isYoloGatewayAllowed(.yolo, "0:0:0:0:0:0:0:1"));
+    try std.testing.expect(isYoloGatewayAllowed(.yolo, "[0:0:0:0:0:0:0:1]"));
 }
 
-test "isYoloGatewayAllowed allows force override" {
-    try std.testing.expect(isYoloGatewayAllowed(.yolo, "0.0.0.0", true));
+test "isYoloGatewayAllowed rejects non-loopback public host in yolo mode" {
+    // After removing the env var bypass, yolo on public binds is always rejected.
+    try std.testing.expect(!isYoloGatewayAllowed(.yolo, "0.0.0.0"));
 }
 
 test "isYoloGatewayAllowed allows non-yolo levels" {
-    try std.testing.expect(isYoloGatewayAllowed(.supervised, "0.0.0.0", false));
+    try std.testing.expect(isYoloGatewayAllowed(.supervised, "0.0.0.0"));
 }
 
 test "constant time eq handles unicode bytes" {
