@@ -45,6 +45,8 @@ pub const VAULT_VERSION: u8 = 1;
 pub const NONCE_SIZE: usize = 24; // XChaCha20-Poly1305 nonce
 pub const KEY_SIZE: usize = 32; // 256-bit key
 pub const TAG_SIZE: usize = 16; // Poly1305 auth tag
+pub const SALT_SIZE: usize = 32; // PBKDF2 salt size
+pub const PBKDF2_ROUNDS: u32 = 10000; // PBKDF2 iteration count
 pub const HEADER_SIZE: usize = VAULT_MAGIC.len + 1 + KEY_SIZE + NONCE_SIZE + TAG_SIZE; // magic + version + pubkey + nonce + tag
 
 pub const EncryptedSecret = struct {
@@ -52,7 +54,7 @@ pub const EncryptedSecret = struct {
     nonce: [NONCE_SIZE]u8,
     ciphertext: []const u8,       // Owned
     tag: [TAG_SIZE]u8,
-    recipient_pubkey: [KEY_SIZE]u8, // X25519 public key of recipient
+    recipient_id: [KEY_SIZE]u8, // Random identifier for the encrypted blob
 
     pub fn deinit(self: *EncryptedSecret, allocator: Allocator) void {
         allocator.free(self.ciphertext);
@@ -128,7 +130,7 @@ pub const SecretsVault = struct {
         std.fs.cwd().access(expanded_path, .{}) catch {
             // Master key doesn't exist yet — create it
             try self.createMasterKey(passphrase);
-            self.master_key = try self.deriveKeyFromPassphrase(passphrase);
+            self.master_key = try self.loadMasterKey(passphrase);
             self.is_locked = false;
             return;
         };
@@ -365,13 +367,18 @@ pub const SecretsVault = struct {
         var master_key: [KEY_SIZE]u8 = undefined;
         std.crypto.random.bytes(&master_key);
 
-        // Encrypt master key with passphrase (age-style: scrypt + ChaCha20-Poly1305)
-        const encrypted_key = try self.encryptWithPassphrase(&master_key, passphrase);
+        // Generate random per-vault salt for PBKDF2
+        var salt: [SALT_SIZE]u8 = undefined;
+        std.crypto.random.bytes(&salt);
 
-        // Write to file
+        // Encrypt master key with passphrase (PBKDF2 + ChaCha20-Poly1305)
+        const encrypted_key = try self.encryptWithPassphraseSalt(&master_key, passphrase, &salt);
+
+        // Write to file: salt first, then vault format
         const file = try std.fs.cwd().createFile(key_path, .{});
         defer file.close();
         var writer = file.writer();
+        try writer.writeAll(&salt);
         try writer.writeAll(VAULT_MAGIC);
         try writer.writeByte(VAULT_VERSION);
         try writer.writeAll(&encrypted_key.nonce);
@@ -387,6 +394,10 @@ pub const SecretsVault = struct {
         const file = try std.fs.cwd().openFile(key_path, .{});
         defer file.close();
         var reader = file.reader();
+
+        // Read per-vault salt (prepended to file)
+        var salt: [SALT_SIZE]u8 = undefined;
+        try reader.readNoEof(&salt);
 
         // Verify magic
         var magic: [VAULT_MAGIC.len]u8 = undefined;
@@ -410,24 +421,22 @@ pub const SecretsVault = struct {
             .nonce = nonce,
             .ciphertext = ciphertext,
             .tag = tag,
-            .recipient_pubkey = .{},
+            .recipient_pubkey = undefined, // not used for passphrase-encrypted blob
         };
 
-        return try self.decryptWithPassphrase(&encrypted, passphrase);
+        return try self.decryptWithPassphraseSalt(&encrypted, passphrase, &salt);
     }
 
-    fn deriveKeyFromPassphrase(self: *SecretsVault, passphrase: []const u8) ![KEY_SIZE]u8 {
-        // Scrypt-like key derivation (simplified: SHA-256 + HMAC)
-        // In production, use proper scrypt/Argon2
+    fn deriveKeyFromPassphrase(self: *SecretsVault, passphrase: []const u8, salt: *const [SALT_SIZE]u8) ![KEY_SIZE]u8 {
+        // PBKDF2-HMAC-SHA256 key derivation with per-vault random salt
         var key: [KEY_SIZE]u8 = undefined;
-        const salt = "aizen-vault-key-derivation-v1";
-
-        // HMAC-SHA256(passphrase, salt || passphrase)
-        std.crypto.hash.sha2.Sha256.hash(
-            try std.mem.concat(self.allocator, u8, &.{ salt, passphrase }),
+        std.crypto.pbkdf2.pbkdf2(
             &key,
-            .{},
-        );
+            passphrase,
+            salt,
+            PBKDF2_ROUNDS,
+            std.crypto.auth.hmac.sha2.HmacSha256,
+        ) catch return VaultError.EncryptionFailed;
         return key;
     }
 
@@ -436,6 +445,10 @@ pub const SecretsVault = struct {
 
         var nonce: [NONCE_SIZE]u8 = undefined;
         std.crypto.random.bytes(&nonce);
+
+        // Generate random recipient_id (NOT the master key)
+        var recipient_id: [KEY_SIZE]u8 = undefined;
+        std.crypto.random.bytes(&recipient_id);
 
         // XChaCha20-Poly1305 encryption
         const ciphertext_len = plaintext.len;
@@ -456,7 +469,7 @@ pub const SecretsVault = struct {
             .nonce = nonce,
             .ciphertext = ciphertext,
             .tag = tag,
-            .recipient_pubkey = key, // Simplified: use key as "public key" placeholder
+            .recipient_pubkey = recipient_id, // random ID, NOT the master key
         };
     }
 
@@ -487,8 +500,8 @@ pub const SecretsVault = struct {
         tag: [TAG_SIZE]u8,
     };
 
-    fn encryptWithPassphrase(self: *SecretsVault, data: *const [KEY_SIZE]u8, passphrase: []const u8) !PassphraseEncrypted {
-        const key = try self.deriveKeyFromPassphrase(passphrase);
+    fn encryptWithPassphraseSalt(self: *SecretsVault, data: *const [KEY_SIZE]u8, passphrase: []const u8, salt: *const [SALT_SIZE]u8) !PassphraseEncrypted {
+        const key = try self.deriveKeyFromPassphrase(passphrase, salt);
         var nonce: [NONCE_SIZE]u8 = undefined;
         std.crypto.random.bytes(&nonce);
 
@@ -507,8 +520,8 @@ pub const SecretsVault = struct {
         return .{ .nonce = nonce, .ciphertext = ciphertext, .tag = tag };
     }
 
-    fn decryptWithPassphrase(self: *SecretsVault, encrypted: *const EncryptedSecret, passphrase: []const u8) ![KEY_SIZE]u8 {
-        const key = try self.deriveKeyFromPassphrase(passphrase);
+    fn decryptWithPassphraseSalt(self: *SecretsVault, encrypted: *const EncryptedSecret, passphrase: []const u8, salt: *const [SALT_SIZE]u8) ![KEY_SIZE]u8 {
+        const key = try self.deriveKeyFromPassphrase(passphrase, salt);
         var plaintext: [KEY_SIZE]u8 = undefined;
 
         std.crypto.aead.chacha.Poly1305.decrypt(

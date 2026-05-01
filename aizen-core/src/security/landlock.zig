@@ -3,7 +3,17 @@ const builtin = @import("builtin");
 const Sandbox = @import("sandbox.zig").Sandbox;
 
 /// Landlock sandbox backend for Linux kernel 5.13+ LSM.
-/// Restricts filesystem access using the Landlock kernel interface.
+///
+/// **Reserved for future implementation.** This module is a stub that
+/// defines the vtable wiring and syscall stubs, but does not yet create
+/// Landlock rulesets or call `landlock_restrict_self()`. Until ruleset
+/// enforcement is implemented, `isAvailable()` always returns `false`
+/// so that the sandbox selector never picks Landlock.
+///
+/// **Production sandboxes:** Firejail and Bubblewrap are the currently
+/// supported sandbox backends for production use. Use them for any
+/// real filesystem/process isolation in aizen.
+///
 /// On non-Linux platforms, returns error.UnsupportedPlatform.
 pub const LandlockSandbox = struct {
     workspace_dir: []const u8,
@@ -35,10 +45,15 @@ pub const LandlockSandbox = struct {
         return argv;
     }
 
+    /// Returns `false` — Landlock is a **reserved future capability**.
+    ///
+    /// The vtable and syscall stubs are wired, but aizen does not yet
+    /// create Landlock rulesets or call `landlock_restrict_self()`.
+    /// Advertising availability would be a false security signal.
+    ///
+    /// For production sandboxing, use **Firejail** or **Bubblewrap**,
+    /// which are the currently supported sandbox backends.
     fn isAvailable(_: *anyopaque) bool {
-        // Aizen does not yet install Landlock rulesets or call
-        // landlock_restrict_self(), so advertising availability would be a
-        // false security signal.
         return false;
     }
 

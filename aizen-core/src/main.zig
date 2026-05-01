@@ -777,9 +777,9 @@ fn runGateway(allocator: std.mem.Allocator, sub_args: []const []const u8) !void 
         std_compat.process.exit(1);
     };
 
-    if (!yc.security.isYoloGatewayAllowed(cfg.autonomy.level, cfg.gateway.host, yc.security.isYoloForceEnabled(allocator))) {
+    if (!yc.security.isYoloGatewayAllowed(cfg.autonomy.level, cfg.gateway.host)) {
         std.debug.print(
-            "Refusing to start gateway with autonomy.level=yolo on non-local host '{s}'. Use localhost or set AIZEN_ALLOW_YOLO=1 to force this insecure mode.\n",
+            "Refusing to start gateway with autonomy.level=yolo on non-local host '{s}'. YOLO mode is only allowed on loopback addresses.\n",
             .{cfg.gateway.host},
         );
         std_compat.process.exit(1);

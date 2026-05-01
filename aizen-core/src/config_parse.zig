@@ -2445,6 +2445,13 @@ pub fn parseJson(self: *Config, content: []const u8) !void {
                     }
                 }
             }
+            if (sec.object.get("agent_card")) |ac| {
+                if (ac == .object) {
+                    if (ac.object.get("expose")) |v| {
+                        if (v == .bool) self.security.agent_card.expose = v.bool;
+                    }
+                }
+            }
         }
     }
 

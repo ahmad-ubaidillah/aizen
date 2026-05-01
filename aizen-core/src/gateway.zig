@@ -4689,10 +4689,12 @@ fn handleTeamsWebhookRoute(ctx: *WebhookHandlerContext) void {
             return;
         }
     } else {
-        // No webhook_secret configured — webhook is open to anyone who knows the URL.
-        // This is acceptable for development but should use webhook_secret or JWT
-        // validation in production deployments.
-        std.log.scoped(.teams).warn("Teams webhook: no webhook_secret configured — request accepted without auth", .{});
+        // No webhook_secret configured — reject the request.
+        // A webhook_secret MUST be set to authenticate incoming Teams requests.
+        std.log.scoped(.teams).warn("Teams webhook rejected: webhook_secret not configured", .{});
+        ctx.response_status = "403 Forbidden";
+        ctx.response_body = "{\"error\":\"webhook_secret not configured\"}";
+        return;
     }
 
     // For nested fields, use manual parsing since jsonStringField doesn't handle nesting
@@ -5328,24 +5330,30 @@ pub fn run(allocator: std.mem.Allocator, host: []const u8, port: u16, config_ptr
             response_status = webhook_ctx.response_status;
             response_content_type = webhook_ctx.response_content_type;
             response_body = webhook_ctx.response_body;
-        } else if (std.mem.eql(u8, base_path, "/.well-known/agent.json") or
-            std.mem.eql(u8, base_path, "/.well-known/agent-card.json"))
-        {
-            // A2A Agent Card discovery (public, no auth).
-            if (config_opt) |cfg| {
-                if (cfg.a2a.enabled) {
-                    const vision_capable = if (session_mgr_opt) |sm| sm.vision_capable else null;
-                    const card = a2a.handleAgentCard(req_allocator, cfg, vision_capable);
-                    response_status = card.status;
-                    response_body = card.body;
-                } else {
-                    response_status = "404 Not Found";
-                    response_body = "{\"error\":\"a2a not enabled\"}";
-                }
+} else if (std.mem.eql(u8, base_path, "/.well-known/agent.json") or
+        std.mem.eql(u8, base_path, "/.well-known/agent-card.json"))
+    {
+        // A2A Agent Card discovery.
+        // SECURITY: Exposing the agent card is gated by security.agent_card.expose.
+        // Default is false (secure-by-default) to prevent unintended information disclosure.
+        if (config_opt) |cfg| {
+            if (!cfg.security.agent_card.expose) {
+                // Agent card exposure disabled — return 404 to avoid leaking capability info.
+                response_status = "404 Not Found";
+                response_body = "{\"error\":\"not found\"}";
+            } else if (cfg.a2a.enabled) {
+                const vision_capable = if (session_mgr_opt) |sm| sm.vision_capable else null;
+                const card = a2a.handleAgentCard(req_allocator, cfg, vision_capable);
+                response_status = card.status;
+                response_body = card.body;
             } else {
                 response_status = "404 Not Found";
-                response_body = "{\"error\":\"not configured\"}";
+                response_body = "{\"error\":\"a2a not enabled\"}";
             }
+        } else {
+            response_status = "404 Not Found";
+            response_body = "{\"error\":\"not configured\"}";
+        }
         } else if (std.mem.eql(u8, base_path, "/a2a")) {
             // A2A JSON-RPC endpoint (auth required).
             if (!is_post) {

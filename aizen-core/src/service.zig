@@ -1331,9 +1331,9 @@ fn runWindowsServiceGatewayProcess(allocator: std.mem.Allocator) !void {
 
     try cfg.validate();
     try applyServiceRuntimeProviderOverrides(&cfg);
-    if (!security.isYoloGatewayAllowed(cfg.autonomy.level, cfg.gateway.host, security.isYoloForceEnabled(allocator))) {
+    if (!security.isYoloGatewayAllowed(cfg.autonomy.level, cfg.gateway.host)) {
         std.debug.print(
-            "Refusing to start gateway service with autonomy.level=yolo on non-local host '{s}'. Use localhost or set AIZEN_ALLOW_YOLO=1 to force this insecure mode.\n",
+            "Refusing to start gateway service with autonomy.level=yolo on non-local host '{s}'. YOLO mode is only allowed on loopback addresses.\n",
             .{cfg.gateway.host},
         );
         return error.InsecureYoloGatewayBind;
