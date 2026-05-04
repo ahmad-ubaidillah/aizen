@@ -1,5 +1,18 @@
 # AI Agent Ecosystem Comparison Report
 
+Status: Reference
+Last reviewed: 2026-05-04
+Primary purpose: ecosystem comparison, source-system strengths, and rationale for feature borrowing.
+
+Use `docs/architecture-design.md` for the actual target-state Aizen design.
+Use `docs/roadmap-current.md` for active execution priorities.
+Use `docs/done-vs-todo.md` for the quickest done-vs-outstanding snapshot.
+
+Overlap note:
+- This document may discuss recommended architecture at a comparative/research level.
+- When it conflicts with `architecture-design.md`, treat `architecture-design.md` as the design authority.
+- Some comparison bullets are intentionally aspirational or capability-oriented; they should not be read as proof that every borrowed feature is fully delivered in current Aizen runtime behavior.
+
 **Researcher Agent Report** | Date: 2026-05-01
 **Projects:** Aizen ecosystem, Zeph, Hermes Agent
 
@@ -221,7 +234,7 @@ A 6-repo Zig-based micro-ecosystem designed for extreme minimalism and edge depl
 | **Self-learning skill evolution** | Agent-as-a-Judge, Wilson score Bayesian ranking, autonomous evolution on failure clusters, ERL heuristic extraction, STEM pattern detection, REINFORCE MLP re-ranking | Aizen has SkillForge (skill discovery) but not self-learning / self-improving skills |
 | **HiAgent context compaction** | Subgoal-aware eviction preserving context relevant to active task, 3-tier pipeline, ClawVM typed pages with fidelity invariants | Aizen has agent/compaction.zig but not subgoal-aware |
 | **8-layer sanitization pipeline** | ContentSanitizer → PII filter → GuardrailFilter → QuarantinedSummarizer → ResponseVerifier → ExfiltrationGuard → MemoryWriteValidator → TurnCausalAnalyzer | Aizen has security/policy.zig and sandbox but not layered content sanitization |
-| **Age-encrypted vault** | x25519 keypair + age-encrypted JSON, zeroizing buffers, per-key trust levels | Aizen has AEAD-encrypted secrets but not the zeroizing vault pattern |
+| **Age-encrypted vault** | x25519 keypair + age-encrypted JSON, zeroizing buffers, per-key trust levels | Aizen now has vault-related implementation work in repo history, but not yet the full Zeph-style zeroizing/trust-model posture as an established operational baseline |
 | **MCP injection detection** | 17-pattern scanner, SSRF validation, pre-connect probing, attestation (schema drift detection), embedding anomaly guard | Aizen has MCP support but no injection detection layer |
 | **MARCH self-check** | Post-response factual consistency verification (Proposer+Checker LLM pipeline) | No equivalent |
 | **Complexity triage routing** | Simple/Medium/Complex/Expert tiers, Thompson Sampling + LinUCB bandit, cascade cost tiers | Aizen has provider routing but not ML-based complexity triage |
@@ -268,7 +281,7 @@ A 6-repo Zig-based micro-ecosystem designed for extreme minimalism and edge depl
 | **MARCH self-check** | Post-response factual consistency (Proposer+Checker LLM pipeline) | No equivalent |
 | **Complexity triage** | ML-based routing (Thompson Sampling, LinUCB) per query complexity | Hermes uses provider routing but not ML-based triage |
 | **Config migration** | Automated config upgrade with `--diff` preview | No equivalent |
-| **Workflow DAG orchestrator** | Built-in DAG execution with LLM planner, plan caching | No equivalent (Hermes subagents are ad-hoc) |
+| **Workflow DAG orchestrator** | Built-in DAG execution with LLM planner, plan caching | Aizen now has orchestration/DAG-related implementation in repo history, but the current product gap is validation, adoption, and operational integration rather than total absence |
 | **Document RAG** | PDF/txt/md ingestion with auto-retrieval | Hermes has no native document ingestion |
 | **LSP integration** | Compiler-level code intelligence via rust-analyzer, pyright, gopls | No equivalent |
 | **Compiled binary** | ~15 MB single Rust binary, ~50ms startup, ~20 MB idle | Hermes is Python; requires runtime |

@@ -1,5 +1,18 @@
 # Aizen Agent — Architecture Design
 
+Status: Reference design authority
+Last reviewed: 2026-05-04
+Primary purpose: target-state architecture and system design for Aizen.
+
+Use `docs/roadmap-current.md` for active execution priorities.
+Use `docs/research-report.md` for ecosystem comparison and rationale for borrowed ideas.
+Use `docs/done-vs-todo.md` for the quickest status snapshot.
+
+Overlap note:
+- This document should own the actual target architecture.
+- If a comparative recommendation in `research-report.md` conflicts with this file, this file wins.
+- This file describes the intended architecture envelope, not a claim that every subsystem below is already fully productized today.
+
 **Architect Agent** | Date: 2026-05-01
 **Tagline:** Execute with Zen
 **Base:** Aizen ecosystem (Zig) + Zeph (Rust) intelligence + Hermes (Python) skill breadth
@@ -15,13 +28,13 @@ aizen/
 │   │   ├── aizen.zig        # Main entry (renamed from aizen.zig)
 │   │   ├── agent/           # Agent loop, provider routing
 │   │   ├── channels/        # 19+ messaging adapters
-│   │   ├── memory/          # SYNAPSE graph memory (new) + existing engines
-│   │   ├── security/        # 8-layer sanitization (new) + sandbox + vault
-│   │   ├── skills/          # Skill loader + self-learning engine (new)
+│   │   ├── memory/          # Current engines + possible graph-memory layer (target-state)
+│   │   ├── security/        # Sandbox + vault, with room for layered sanitization hardening
+│   │   ├── skills/          # Skill loader today; self-learning remains a target-state expansion
 │   │   ├── tools/           # 35+ built-in tools
-│   │   ├── compaction/      # HiAgent subgoal-aware (from Zeph)
-│   │   ├── routing/         # Complexity triage + Thompson Sampling (new)
-│   │   └── config/          # Config migration system (new)
+│   │   ├── compaction/      # Current compaction, with subgoal-aware upgrades as a target
+│   │   ├── routing/         # Current provider routing; advanced triage remains an expansion path
+│   │   └── config/          # Config system and migration-oriented improvements
 │   ├── build.zig
 │   └── build.zig.zon
 ├── aizen-dashboard/         # Management hub + chat UI — forked from aizen-dashboard + aizen-chat-ui
@@ -144,14 +157,14 @@ All aizen-* services communicate via:
 
 | Responsibility | Implementation |
 |---|---|
-| Provider routing | Vtable providers (50+) + complexity triage (Thompson Sampling from Zeph) |
-| Channel adapters | 19+ channels from Aizen, plus Hermes extras (Home Assistant, Feishu, SMS) |
+| Provider routing | Vtable providers (50+) with room for more advanced complexity-aware routing later |
+| Channel adapters | 19+ channels from Aizen, plus possible Hermes-inspired extensions |
 | Tool registry | 35+ built-in tools + Python skill bridge for Hermes skills |
-| Memory | SYNAPSE graph memory (primary) + SQLite (fallback) + Qdrant (optional) |
-| Security | 8-layer sanitization + 4 sandbox backends + age-encrypted vault |
-| Compaction | HiAgent subgoal-aware eviction + ClawVM typed pages |
-| MCP | Full MCP client + 17-pattern injection detection |
-| ACP | ACP server for IDE integration (from Zeph) |
+| Memory | Existing memory engines today; graph-memory evolution remains a strategic target |
+| Security | Current sandbox + secret handling, with layered sanitization and vault hardening as expansion areas |
+| Compaction | Current compaction, with subgoal-aware upgrades as a target-state evolution |
+| MCP | Full MCP client today; injection-detection hardening remains a gap |
+| ACP | ACP/server-style IDE integration remains a target capability, not a confirmed current operational baseline |
 
 **API surface:**
 - `:8080/api/v1/chat` — Main chat endpoint

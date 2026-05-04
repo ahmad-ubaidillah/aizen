@@ -1,12 +1,25 @@
 # Aizen Agent — Comprehensive Gap Analysis
 
-> Generated: 2026-05-01 | Comparing: Aizen vs Hermes vs OMNI vs Zeph vs Aizen vs RTK
+Status: Partially stale strategic reference
+Last reviewed: 2026-05-04
+Current execution source of truth:
+- live kanban work
+- `docs/roadmap-current.md`
+
+This document remains useful for long-term strategic comparison and capability planning, but it should not be used as the primary source for near-term execution priorities.
+
+Decision framing:
+- Strategic capability gaps answer: what capabilities Aizen still needs to build for long-term competitiveness and platform maturity.
+- Operational bottlenecks answer: what must be fixed now to ship credibly, reduce confusion, and unblock current work.
+- Do not rank these in one flat list without considering time horizon.
+
+> Generated: 2026-05-01 | Comparing: Aizen vs Hermes vs OMNI vs Zeph vs RTK
 
 ## 1. Executive Summary
 
 Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanced with OMNI integration, tool pruning, prompt caching, and a Python skill bridge. With 319K+ lines of Zig code across 6 services, Aizen has a solid foundation. However, several critical gaps remain compared to the 5 reference systems.
 
-**Key Finding**: Aizen has 402 stale brand references (290 in markdown, 112 in Zig source) that need cleanup. The documentation is outdated, referencing aizen/aizen-dashboard/aizen-watch/aizen-kanban/aizen-orchestrate instead of aizen. Feature-wise, Aizen lacks self-learning skills (from Zeph), DAG task orchestration (from Zeph), structured command rewriting (from RTK), and the breadth of Hermes's ecosystem (profiles, kanban, TUI, plugins).
+**Key Finding (historical, now partially outdated)**: This document originally identified heavy stale-branding debt and several strategic feature gaps. Since that first pass, parts of the repo have moved forward materially: structured output rewriting, DAG task orchestration, age-encrypted vaults, and LLM-based context compression now exist in the codebase/history, while the immediate bottlenecks have shifted toward provider compatibility, custom OpenAI-compatible onboarding, build/profile isolation, and dashboard/API validation behavior. Branding/doc debt still exists in parts of the wider ecosystem, but the main short-term risk is now operational clarity rather than lack of foundational ideas.
 
 ---
 
@@ -78,9 +91,14 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 
 ---
 
-## 4. What Aizen Is Missing (Gaps)
+## 4. Strategic capability gaps
 
-### CRITICAL (Must-Have)
+Status note:
+- This section is strategic, not an exact live execution board.
+- Some items below were originally marked as missing but now exist at least partially in the repo/history.
+- For current near-term truth, prefer `docs/roadmap-current.md`.
+
+### CRITICAL / STILL MISSING (Must-Have)
 
 | # | Gap | Source System | Impact | Effort |
 |---|---|---|---|---|
@@ -88,19 +106,19 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 | G2 | **Credential Pool / Multi-Key Rotation** | Hermes | Rotate multiple API keys automatically, avoiding rate limits. | 2-3 days |
 | G3 | **Plugin System** | Hermes | Runtime-loadable plugins for extending agent capabilities without recompilation. | 4-5 days |
 | G4 | **TUI (Terminal UI)** | Hermes/Zeph | Interactive terminal dashboard for monitoring, chat, and control. | 5-7 days |
-| G5 | **Documentation Cleanup** | Internal | 402 old brand references, stale Aizen docs. | 1-2 days |
-| G6 | **Structured Output Rewriting** | RTK | Intelligent filtering of tool output beyond pruning — 4 strategies (filter, group, truncate, deduplicate). | 3-4 days |
+| G5 | **Documentation Cleanup / Authority Clarity** | Internal | Shipping/readiness bottleneck: stale branding, confusing docs authority, and trust issues. Track as operational P0 work, not as a long-term strategic capability gap. | 1-2 days |
 
-### HIGH (Should-Have)
+### HIGH / PARTIALLY DONE OR NEEDS HARDENING
 
-| # | Gap | Source System | Impact | Effort |
-|---|---|---|---|---|
-| G7 | **DAG Task Orchestration** | Zeph | Directed Acyclic Graph task execution with parallel/sequential steps, plan templates. | 5-7 days |
-| G8 | **MCP Injection Detection** | Zeph | 17-pattern security scanner for MCP prompt injection attacks. | 2-3 days |
-| G9 | **Rate Limiting** | Hermes | Per-provider rate limit tracking and backoff. | 2-3 days |
-| G10 | **Memory Quality Gate** | Zeph | MemReader quality scoring for stored memories, pruning low-quality entries. | 3-4 days |
-| G11 | **Age-Encrypted Secrets Vault** | Zeph | Encrypted secret storage with age encryption, better than ChaCha20 env files. | 2-3 days |
-| G12 | **Context Compression** | Hermes | LLM-based context compression beyond auto-compaction. | 3-4 days |
+| # | Gap | Source System | Current status | Impact | Effort |
+|---|---|---|---|---|---|
+| G6 | **Structured Output Rewriting** | RTK | Implemented in repo history, but operational adoption/integration status still needs validation. | Improve output filtering quality and token handling. | 1-3 days hardening/integration |
+| G7 | **DAG Task Orchestration** | Zeph | Implemented in repo history, but not the current operational bottleneck. | Parallel/sequential step execution and reusable plans. | 1-3 days validation/docs |
+| G8 | **MCP Injection Detection** | Zeph | Still missing as a first-class hardened feature. | Prompt-injection defense for MCP/tool surfaces. | 2-3 days |
+| G9 | **Rate Limiting** | Hermes | Still missing or incomplete as explicit per-provider control. | Backoff/limit awareness for provider stability. | 2-3 days |
+| G10 | **Memory Quality Gate** | Zeph | Still missing. | Scoring/pruning low-quality memory entries. | 3-4 days |
+| G11 | **Age-Encrypted Secrets Vault** | Zeph | Implemented in repo history; current adoption and UX still need validation. | Better secret handling posture. | 1-2 days validation/docs |
+| G12 | **Context Compression** | Hermes | Implemented in repo history; may still need integration and operator-facing validation. | Better long-context handling. | 1-3 days validation/docs |
 
 ### MEDIUM (Nice-to-Have)
 
@@ -114,28 +132,52 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 
 ---
 
-## 5. Top 10 Priority Gaps (Ranked by Impact × Feasibility)
+## 5. Priority matrix by horizon
 
-| Priority | Gap | Why Critical | Source | Est. Days |
-|---|---|---|---|---|
-| 1 | **Documentation Cleanup** | 402 brand refs block legitimacy. First impression matters. | Internal | 1-2 |
-| 2 | **Self-Learning Skills** | Differentiating feature — skills that improve over time. | Zeph | 5-7 |
-| 3 | **Credential Pool** | Essential for production — multi-key rotation prevents outages. | Hermes | 2-3 |
-| 4 | **Plugin System** | Enables community contributions without Zig compilation. | Hermes | 4-5 |
-| 5 | **TUI Dashboard** | Primary interface for power users. | Hermes/Zeph | 5-7 |
-| 6 | **Structured Output Rewriting** | Complements OMNI integration for deeper token savings. | RTK | 3-4 |
-| 7 | **Rate Limiting** | Prevents API ban and throttling in production. | Hermes | 2-3 |
-| 8 | **MCP Injection Detection** | Security is critical — Zeph's 17-pattern scanner. | Zeph | 2-3 |
-| 9 | **DAG Task Orchestration** | Enables complex multi-step agent workflows. | Zeph | 5-7 |
-| 10 | **Age-Encrypted Vaults** | Better secret management than env files. | Zeph | 2-3 |
+### P0 — Operational now
+- Persist `base_url` correctly in saved-provider CRUD and validation flows
+- Preserve upstream status specificity in dashboard/API validation responses
+- Surface sanitized provider diagnostics clearly for operators
+- Fix raw `408` parity between core and dashboard classifiers
+- Stabilize provider-only build/test validation lane
+- Align sqlite memory config/status/runtime with compiled capabilities
+- Continue docs authority cleanup (README, roadmap-current, historical labels)
 
-**Total estimated effort: 30-45 engineer-days**
+### P1 — Strategic next
+- Credential Pool / Multi-Key Rotation
+- Plugin System
+- TUI Dashboard
+- Rate Limiting
+- MCP Injection Detection
+- Build/profile matrix hardening and explicit optional-web documentation
+
+### P2 — Strategic later
+- Self-Learning Skills
+- Memory Quality Gate
+- Trajectory Replay / PII Filter / Exfiltration Detection / Health Registry / Model Metadata Smart Routing
+- Validation and productization pass for already-implemented strategic features:
+  - Structured Output Rewriting
+  - DAG Task Orchestration
+  - Age-Encrypted Vaults
+  - Context Compression
+
+Why this framing is better:
+- separates current shipping blockers from strategic platform investments
+- avoids calling implemented-but-not-yet-operationalized features “missing” in a misleading way
+- matches live findings from current provider and build-profile work more closely
+
+**Total estimated effort remains split between immediate operational stabilization and broader strategic feature maturation.**
 
 ---
 
-## 6. Markdown Audit
+## 6. Operational bottlenecks and readiness risks
 
-### Files Categorized
+Status note:
+- The file/action lists below came from the first major rebrand pass.
+- They are preserved as historical reference, not as a guaranteed up-to-date execution list.
+- Some listed files have since been updated, while other real blockers emerged later in live provider/build testing.
+
+### Historical rebrand/debt findings (reference only)
 
 #### DELETE (Stale / Duplicate / Old Brand)
 
@@ -156,14 +198,14 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 | /README.md | References aizen | Rebrand to Aizen |
 | /aizen-core/README.md | References Aizen x3 | Rebrand + add Aizen features |
 | /aizen-core/CLAUDE.md | References Aizen | Rebrand |
-| /docs/research-report.md | 57+ aizen refs | Rebrand to Aizen, update analysis |
-| /docs/architecture-design.md | 42+ aizen refs | Rebrand, update design for Aizen |
-| /docs/pm-spec.md | 41+ aizen refs | Rebrand, update spec |
-| /aizen-dashboard/README.md | aizen-dashboard, aizen-kanban, aizen-orchestrate refs | Rebrand |
-| /aizen-kanban/README.md | 12x aizen-kanban refs | Rebrand |
-| /aizen-kanban/AGENTS.md | 2x aizen-kanban refs | Rebrand |
-| /aizen-kanban/docs/*.md | aizen-kanban refs | Rebrand all |
-| /aizen-orchestrate/README.md | aizen-orchestrate refs | Rebrand |
+| /docs/research-report.md | Historical stale references | Rebrand/update as needed |
+| /docs/architecture-design.md | Historical stale references | Rebrand/update as needed |
+| /docs/pm-spec.md | Historical stale references | Rebrand/update as needed |
+| /aizen-dashboard/README.md | cross-service stale naming | Rebrand/update as needed |
+| /aizen-kanban/README.md | cross-service stale naming | Rebrand/update as needed |
+| /aizen-kanban/AGENTS.md | cross-service stale naming | Rebrand/update as needed |
+| /aizen-kanban/docs/*.md | cross-service stale naming | Rebrand all as needed |
+| /aizen-orchestrate/README.md | cross-service stale naming | Rebrand/update as needed |
 | /aizen-orchestrate/docs/superpowers/*.md | Old content | Rebrand + update |
 | All docs/en/ & docs/zh/ | Language-specific pages | Rebrand throughout |
 
@@ -171,61 +213,66 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 
 | File | Notes |
 |---|---|
-| /aizen-core/docs/integration-analysis.md | Technical content, no brand issues |
+| /aizen-core/docs/integration-analysis.md | Technical content, no major issue noted in original pass |
 | /aizen-core/docs/integration-roadmap.md | Technical content |
-| /docs/gap-analysis.md | This file (NEW) |
+| /docs/gap-analysis.md | Strategic reference |
 | /aizen-core/SECURITY.md | Security docs |
 | /aizen-core/SIGNAL.md | Signal protocol docs |
 | /aizen-core/RELEASING.md | Release process |
 | /aizen-core/CONTRIBUTING.md | Contribution guidelines |
-| /aizen-core/docs/en/*.md | Need rebrand but content OK |
-| /aizen-core/src/workspace_templates/*.md | Template files, update branding |
+| /aizen-core/docs/en/*.md | Content may still need selective refresh |
+| /aizen-core/src/workspace_templates/*.md | Template files; branding may still need review |
 
-### Zig Source Brand References (112 total)
-
-33 Zig files still reference aizen/aizen-dashboard/aizen-watch/aizen-kanban/aizen-orchestrate. Key files:
-- /src/skills.zig (10 refs)
-- /src/config.zig (9 refs)
-- /src/config_types.zig (4 refs)
-- /dashboard/src/api/instances.zig (15 refs)
-- /dashboard/src/core/aizen_web_channel.zig (7 refs — rename entire file!)
-
-These should be batch-replaced using a rebranding script (like `scripts/rebrand.sh` but for Zig source).
+### Current live operational bottlenecks (higher priority than the historical list)
+- Saved-provider `base_url` persistence is still inconsistent
+- Dashboard/API validation contract still loses useful upstream specificity in some paths
+- Sanitized provider diagnostics need better operator-facing surfacing
+- Raw `408` handling still differs between core and dashboard edge cases
+- Provider-only validation is improved but not yet a fully durable CI-quality lane
+- sqlite memory capability/status/runtime mismatch remains a real operator-risk item
+- native glibc `.sframe` linker issue means musl remains the safer provider-validation path on some hosts
 
 ---
 
 ## 7. Implementation Roadmap
 
-### Phase 1: Cleanup (1-2 days)
-- [ ] Run comprehensive rebrand (290 MD refs + 112 Zig refs)
-- [ ] Delete 7 stale markdown files
-- [ ] Rename aizen_web_channel.zig → aizen_web_channel.zig
-- [ ] Update all docs/en/ and docs/zh/ pages
-- [ ] Verify `zig build` still passes
+Status note:
+- The checklist below is now a strategic/historical roadmap, not a live execution tracker.
+- For current near-term priorities, use `docs/roadmap-current.md` and live kanban.
 
-### Phase 2: Core Gaps (15-25 days)
+### Phase 1: Operational Stabilization (current)
+- [ ] Persist `base_url` in saved provider CRUD and validation flows
+- [ ] Preserve upstream status specificity in dashboard/API validation responses
+- [ ] Surface sanitized provider diagnostics to dashboard/frontend consumers
+- [ ] Fix raw `408` parity between core and dashboard classifiers
+- [ ] Turn provider smoke validation into a durable CI-quality lane
+- [ ] Align sqlite memory config/status/runtime with compiled capabilities
+- [ ] Finish docs sync after the current provider stabilization wave
+
+### Phase 2: Strategic capability work still missing
 - [ ] G1: Self-Learning Skills (Wilson score + Bayesian ranking)
 - [ ] G2: Credential Pool (multi-key rotation)
 - [ ] G3: Plugin System (runtime-loadable)
-- [ ] G4: TUI Dashboard (Bubble Tea or zig-spoon)
-- [ ] G6: Structured Output Rewriting (4 strategies from RTK)
-
-### Phase 3: Hardening (10-18 days)
-- [ ] G7: DAG Task Orchestration
+- [ ] G4: TUI Dashboard
 - [ ] G8: MCP Injection Detection (17-pattern scanner)
 - [ ] G9: Rate Limiting (per-provider)
 - [ ] G10: Memory Quality Gate (MemReader)
-- [ ] G11: Age-Encrypted Vaults
-- [ ] G12: Context Compression (LLM-based)
 
-### Phase 4: Polish (5-10 days)
+### Phase 3: Validate and operationalize already-implemented strategic features
+- [ ] G6: Structured Output Rewriting — verify integration, docs, and real use paths
+- [ ] G7: DAG Task Orchestration — verify scope, ergonomics, and practical adoption
+- [ ] G11: Age-Encrypted Vaults — validate UX and docs
+- [ ] G12: Context Compression — validate effectiveness and operator-facing behavior
+- [ ] Build/profile matrix hardening and optional-web documentation
+
+### Phase 4: Polish / later hardening
 - [ ] G13: Trajectory Replay
 - [ ] G14: PII Filter
 - [ ] G15: Exfiltration Detection
 - [ ] G16: Health Registry
 - [ ] G17: Model Metadata Smart Routing
 
-**Total: 30-55 engineer-days**
+**This roadmap should now be read as strategic direction only, not as exact live status.**
 
 ---
 
