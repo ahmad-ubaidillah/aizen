@@ -21,10 +21,14 @@ const appendEscaped = helpers.appendEscaped;
 pub const ProviderProbeResult = struct {
     live_ok: bool,
     reason: []const u8,
+    detail: ?[]const u8 = null,
+    status_code: ?u16 = null,
     owned_reason: ?[]u8 = null,
+    owned_detail: ?[]u8 = null,
 
     pub fn deinit(self: ProviderProbeResult, allocator: std.mem.Allocator) void {
         if (self.owned_reason) |reason| allocator.free(reason);
+        if (self.owned_detail) |detail| allocator.free(detail);
     }
 };
 
@@ -622,7 +626,11 @@ pub fn handleValidateProviders(
     buf.appendSlice("{\"results\":[") catch return null;
 
     // Track validation results for auto-save
-    const ProbeResult = struct { live_ok: bool };
+    const ProbeResult = struct {
+        live_ok: bool,
+        status_code: ?u16 = null,
+        detail: ?[]const u8 = null,
+    };
     var probe_results = std.array_list.Managed(ProbeResult).init(allocator);
     defer probe_results.deinit();
     var saved_providers_warning: ?[]const u8 = null;
@@ -631,15 +639,22 @@ pub fn handleValidateProviders(
         if (idx > 0) buf.append(',') catch return null;
 
         writeMinimalProviderConfig(allocator, tmp_dir, prov.provider, prov.api_key, prov.base_url) catch {
-            appendProviderResult(&buf, prov.provider, false, "config_write_failed") catch return null;
+            appendProviderResult(&buf, prov.provider, .{
+                .live_ok = false,
+                .reason = "config_write_failed",
+            }) catch return null;
             probe_results.append(.{ .live_ok = false }) catch return null;
             continue;
         };
 
         const result = probeProviderViaComponentBinary(allocator, component_name, bin_path, tmp_dir, prov.provider, prov.model);
         defer result.deinit(allocator);
-        appendProviderResult(&buf, prov.provider, result.live_ok, result.reason) catch return null;
-        probe_results.append(.{ .live_ok = result.live_ok }) catch return null;
+        appendProviderResult(&buf, prov.provider, result) catch return null;
+        probe_results.append(.{
+            .live_ok = result.live_ok,
+            .status_code = result.status_code,
+            .detail = result.detail,
+        }) catch return null;
     }
 
     buf.appendSlice("]") catch return null;
@@ -651,7 +666,7 @@ pub fn handleValidateProviders(
             const now = providers_api.nowIso8601(allocator) catch "";
             defer if (now.len > 0) allocator.free(now);
 
-            if (state.findSavedProviderId(prov.provider, prov.api_key, prov.model)) |existing_id| {
+            if (state.findSavedProviderId(prov.provider, prov.api_key, prov.model, prov.base_url)) |existing_id| {
                 if (now.len > 0) {
                     _ = state.updateSavedProvider(existing_id, .{
                         .validated_at = now,
@@ -669,6 +684,7 @@ pub fn handleValidateProviders(
                     .provider = prov.provider,
                     .api_key = prov.api_key,
                     .model = prov.model,
+                    .base_url = prov.base_url,
                     .validated_with = component_name,
                 }) catch {
                     saved_providers_warning = "validated providers could not be saved";
@@ -767,6 +783,8 @@ fn probeProviderViaComponentBinary(
     const probe_parsed = std.json.parseFromSlice(struct {
         live_ok: bool = false,
         reason: ?[]const u8 = null,
+        detail: ?[]const u8 = null,
+        status_code: ?u16 = null,
     }, allocator, result.stdout, .{
         .allocate = .alloc_if_needed,
         .ignore_unknown_fields = true,
@@ -778,21 +796,38 @@ fn probeProviderViaComponentBinary(
 
     const reason_src = probe_parsed.value.reason orelse (if (probe_parsed.value.live_ok) "ok" else "auth_check_failed");
     const owned_reason = allocator.dupe(u8, reason_src) catch null;
+    const detail_src = probe_parsed.value.detail;
+    const owned_detail = if (detail_src) |detail| allocator.dupe(u8, detail) catch null else null;
     return .{
         .live_ok = probe_parsed.value.live_ok,
         .reason = owned_reason orelse reason_src,
+        .detail = if (owned_detail) |detail| detail else detail_src,
+        .status_code = probe_parsed.value.status_code,
         .owned_reason = owned_reason,
+        .owned_detail = owned_detail,
     };
 }
 
-fn appendProviderResult(buf: *std.array_list.Managed(u8), provider: []const u8, live_ok: bool, reason: []const u8) !void {
+fn appendProviderResult(buf: *std.array_list.Managed(u8), provider: []const u8, result: ProviderProbeResult) !void {
     try buf.appendSlice("{\"provider\":\"");
     try appendEscaped(buf, provider);
     try buf.appendSlice("\",\"live_ok\":");
-    try buf.appendSlice(if (live_ok) "true" else "false");
+    try buf.appendSlice(if (result.live_ok) "true" else "false");
     try buf.appendSlice(",\"reason\":\"");
-    try appendEscaped(buf, reason);
-    try buf.appendSlice("\"}");
+    try appendEscaped(buf, result.reason);
+    try buf.appendSlice("\"");
+    if (result.status_code) |code| {
+        try buf.appendSlice(",\"status_code\":");
+        var code_buf: [16]u8 = undefined;
+        const code_str = std.fmt.bufPrint(&code_buf, "{d}", .{code}) catch "0";
+        try buf.appendSlice(code_str);
+    }
+    if (result.detail) |detail| {
+        try buf.appendSlice(",\"detail\":\"");
+        try appendEscaped(buf, detail);
+        try buf.appendSlice("\"");
+    }
+    try buf.appendSlice("}");
 }
 
 /// Handle POST /api/wizard/{component}/validate-channels
