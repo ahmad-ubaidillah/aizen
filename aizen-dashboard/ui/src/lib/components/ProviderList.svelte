@@ -2,12 +2,20 @@
   import { onDestroy, onMount } from "svelte";
   import { api } from "$lib/api/client";
 
+  type ProviderValidationResult = {
+    provider: string;
+    live_ok: boolean;
+    reason: string;
+    status_code?: number;
+    detail?: string;
+  };
+
   let {
     providers = [],
     value = "[]",
     onchange = (v: string) => {},
     component = "",
-    validationResults = [] as Array<{ provider: string; live_ok: boolean; reason: string }>,
+    validationResults = [] as ProviderValidationResult[],
   } = $props();
 
   const LOCAL_PROVIDERS = ["ollama", "lm-studio", "claude-cli", "codex-cli", "openai-codex"];
@@ -306,6 +314,17 @@
     }
     return "Click to load models, then filter as you type.";
   }
+
+  function validationSummary(result: ProviderValidationResult | undefined) {
+    if (!result) return "";
+    const code = result.status_code ? ` (HTTP ${result.status_code})` : "";
+    return `${result.reason || (result.live_ok ? "ok" : "validation_failed")}${code}`;
+  }
+
+  function validationDetail(result: ProviderValidationResult | undefined) {
+    if (!result?.detail) return "";
+    return result.detail.trim();
+  }
 </script>
 
 <div class="provider-list">
@@ -321,7 +340,7 @@
         {#each [validationResults.find((r: any) => r.provider === entry.provider)] as result}
           {#if result}
             <span class="status-dot" class:ok={result.live_ok} class:error={!result.live_ok}
-              title={result.reason}></span>
+              title={validationSummary(result)}></span>
           {/if}
         {/each}
         <select
@@ -425,6 +444,17 @@
         </div>
         <div class="provider-field-hint">{modelFieldHint(entry)}</div>
       </div>
+
+      {#each [validationResults.find((r: any) => r.provider === entry.provider)] as result}
+        {#if result}
+          <div class="provider-validation" class:ok={result.live_ok} class:error={!result.live_ok}>
+            <div class="provider-validation-summary">{validationSummary(result)}</div>
+            {#if validationDetail(result)}
+              <div class="provider-validation-detail">{validationDetail(result)}</div>
+            {/if}
+          </div>
+        {/if}
+      {/each}
     </div>
   {/each}
 
@@ -486,6 +516,37 @@
   .provider-row:hover {
     border-color: color-mix(in srgb, var(--accent) 50%, transparent);
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+  }
+
+  .provider-validation {
+    margin-top: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.45;
+  }
+
+  .provider-validation.ok {
+    border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+  }
+
+  .provider-validation.error {
+    border-color: color-mix(in srgb, var(--danger) 48%, var(--border));
+  }
+
+  .provider-validation-summary {
+    font-weight: 700;
+    color: var(--fg);
+  }
+
+  .provider-validation-detail {
+    margin-top: 0.35rem;
+    color: var(--fg-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .provider-row-header {
