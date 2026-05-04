@@ -28,20 +28,46 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     ...options
   });
+
+  const text = await res.text();
+  const body = text ? safeJsonParse(text) : null;
+
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    const errMsg =
-      typeof body?.message === 'string'
-        ? body.message
-        : typeof body?.error === 'string'
-          ? body.error
-          : body?.error?.message || `HTTP ${res.status}`;
+    const errMsg = buildApiErrorMessage(res.status, body, text);
     throw new Error(errMsg);
   }
+
   if (res.status === 204) return undefined as T;
-  const text = await res.text();
   if (!text) return undefined as T;
-  return JSON.parse(text);
+  return body as T;
+}
+
+function safeJsonParse(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function buildApiErrorMessage(status: number, body: any, rawText: string): string {
+  const reason = typeof body?.reason === 'string' ? body.reason : '';
+  const detail = typeof body?.detail === 'string' ? body.detail : '';
+  const error =
+    typeof body?.message === 'string'
+      ? body.message
+      : typeof body?.error === 'string'
+        ? body.error
+        : body?.error?.message || '';
+
+  const primary = error || detail || reason || rawText || `HTTP ${status}`;
+  const extras: string[] = [];
+
+  if (reason && reason !== primary && reason !== error) extras.push(reason);
+  if (detail && detail !== primary && detail !== reason) extras.push(detail);
+  if (status) extras.push(`HTTP ${status}`);
+
+  return extras.length > 0 ? `${primary} (${extras.join(' · ')})` : primary;
 }
 
 export const api = {
@@ -82,6 +108,8 @@ export const api = {
   getConfig: (c: string, n: string) => request<any>(`/instances/${c}/${n}/config`),
   getProviderHealth: (c: string, n: string) =>
     request<any>(`/instances/${c}/${n}/provider-health`),
+  getCapabilities: (c: string, n: string) =>
+    request<any>(`/instances/${c}/${n}/capabilities`),
   getUsage: (c: string, n: string, window: '24h' | '7d' | '30d' | 'all' = '24h') =>
     request<any>(`/instances/${c}/${n}/usage?window=${window}`),
   getHistory: (c: string, n: string, params?: { sessionId?: string; limit?: number; offset?: number }) =>
@@ -191,9 +219,9 @@ export const api = {
   // Saved providers
   getSavedProviders: (reveal = false) =>
     request<any>(`/providers${reveal ? '?reveal=true' : ''}`),
-  createSavedProvider: (data: { provider: string; api_key: string; model?: string }) =>
+  createSavedProvider: (data: { provider: string; api_key: string; model?: string; base_url?: string }) =>
     request<any>('/providers', { method: 'POST', body: JSON.stringify(data) }),
-  updateSavedProvider: (id: string, data: { name?: string; api_key?: string; model?: string }) =>
+  updateSavedProvider: (id: string, data: { name?: string; api_key?: string; model?: string; base_url?: string }) =>
     request<any>(`/providers/${id.replace('sp_', '')}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteSavedProvider: (id: string) =>
     request<any>(`/providers/${id.replace('sp_', '')}`, { method: 'DELETE' }),

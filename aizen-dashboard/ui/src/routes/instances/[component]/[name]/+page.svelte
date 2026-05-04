@@ -20,6 +20,7 @@
   let loading = $state(false);
   let providerHealth = $state<any>(null);
   let providerHealthLoading = $state(false);
+  let capabilities = $state<any>(null);
   let onboardingStatus = $state<any>(null);
   let lastUsageRefreshAt = $state(0);
   type UsageWindow = "24h" | "7d" | "30d" | "all";
@@ -57,6 +58,18 @@
   );
   let providerHintText = $derived(
     buildProviderHint(providerStatus, providerHealthCurrent, providerHealthLoading),
+  );
+  let memoryBackendConfigured = $derived(
+    typeof capabilities?.configured_memory_backend === "string" ? capabilities.configured_memory_backend : "",
+  );
+  let memoryBackendActive = $derived(
+    typeof capabilities?.active_memory_backend === "string" ? capabilities.active_memory_backend : "",
+  );
+  let memoryBackendStatus = $derived(
+    typeof capabilities?.memory_backend_status === "string" ? capabilities.memory_backend_status : "",
+  );
+  let effectiveMemoryEngines = $derived(
+    Array.isArray(capabilities?.memory_engines) ? capabilities.memory_engines : [],
   );
   let chatModuleName = $derived(
     uiModules["aizen-dashboard-ui"] ? "aizen-dashboard-ui" : "",
@@ -241,6 +254,26 @@
     }
   }
 
+  function formatMemoryBackendStatus(status: string): string {
+    switch (status) {
+      case "active":
+        return "Active";
+      case "configured_but_unavailable":
+        return "Configured but unavailable";
+      case "not_configured":
+        return "Not configured";
+      default:
+        return status || "-";
+    }
+  }
+
+  function formatEngineStatus(engine: any): string {
+    if (!engine) return "";
+    if (engine.active) return "active";
+    if (engine.effective_status) return String(engine.effective_status);
+    return engine.configured ? "configured" : "available";
+  }
+
   function setStandaloneCopyState(state: "idle" | "copied" | "error") {
     standaloneCopyState = state;
     if (standaloneCopyTimer) clearTimeout(standaloneCopyTimer);
@@ -328,6 +361,9 @@
       return "";
     }
     const code = probe.status_code ? ` (HTTP ${probe.status_code})` : "";
+    const detail = typeof probe.detail === "string" && probe.detail.trim().length > 0
+      ? ` — ${probe.detail.trim()}`
+      : "";
     switch (probe.reason) {
       case "invalid_api_key":
         return "Invalid API key (401)";
@@ -340,14 +376,17 @@
       case "forbidden":
         return "Forbidden (403)";
       case "provider_unavailable":
-        return `Provider unavailable${code}`;
+        return `Provider unavailable${code}${detail}`;
+      case "probe_timeout":
+      case "timeout":
+        return `Provider probe timed out${code}${detail}`;
       case "network_error":
-        return "Network error during auth check";
+        return `Network error during auth check${detail}`;
       case "provider_rejected":
-        return "Provider rejected probe (check credentials/model)";
+        return `Provider rejected probe${code}${detail}`;
       case "probe_exec_failed":
       case "probe_request_failed":
-        return "Probe request failed";
+        return `Probe request failed${code}${detail}`;
       case "config_load_failed":
         return "Probe could not load config";
       case "component_binary_missing":
@@ -357,7 +396,7 @@
       case "invalid_probe_response":
         return "Probe returned invalid response";
       default:
-        return `Auth check failed${code}`;
+        return `Auth check failed${code}${detail}`;
     }
   }
 
@@ -513,6 +552,11 @@
     if (loadProviderHealth) {
       await refreshProviderHealth(loadedConfig);
     }
+    try {
+      capabilities = await api.getCapabilities(component, name);
+    } catch {
+      capabilities = null;
+    }
     await refreshUsage(forceUsage);
     await refreshIntegration();
     // Fetch installed UI modules (best-effort)
@@ -574,6 +618,7 @@
     instance = null;
     config = null;
     providerHealth = null;
+    capabilities = null;
     usageData = null;
     integration = null;
     integrationError = null;
@@ -809,6 +854,25 @@
           <div class="info-card">
             <span class="label">Model</span>
             <span>{providerStatus.model}</span>
+          </div>
+        {/if}
+        {#if memoryBackendConfigured || memoryBackendActive || memoryBackendStatus || effectiveMemoryEngines.length > 0}
+          <div class="info-card" class:card-warn={memoryBackendStatus === "configured_but_unavailable"}>
+            <span class="label">Memory Backend</span>
+            <div class="memory-backend-lines">
+              <span><strong>Configured:</strong> {memoryBackendConfigured || "-"}</span>
+              <span><strong>Active:</strong> {memoryBackendActive || "-"}</span>
+              <span><strong>Status:</strong> {formatMemoryBackendStatus(memoryBackendStatus)}</span>
+            </div>
+            {#if effectiveMemoryEngines.length > 0}
+              <div class="memory-engine-list">
+                {#each effectiveMemoryEngines as engine}
+                  <span class="memory-engine-chip" class:active={engine.active}>
+                    {engine.name}: {formatEngineStatus(engine)}
+                  </span>
+                {/each}
+              </div>
+            {/if}
           </div>
         {/if}
         {#if webPort}
@@ -1844,6 +1908,34 @@
     letter-spacing: 1px;
     font-weight: 700;
     margin-top: 0.25rem;
+  }
+  .memory-backend-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+    font-size: 0.82rem;
+  }
+  .memory-engine-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+  }
+  .memory-engine-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+    color: var(--fg-dim);
+    font-size: 0.74rem;
+    font-family: var(--font-mono);
+  }
+  .memory-engine-chip.active {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    color: var(--accent);
   }
   @media (max-width: 700px) {
     .integration-list-item {

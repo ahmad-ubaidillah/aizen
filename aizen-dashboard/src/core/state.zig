@@ -16,6 +16,7 @@ pub const SavedProvider = struct {
     provider: []const u8,
     api_key: []const u8,
     model: []const u8 = "",
+    base_url: []const u8 = "",
     validated_at: []const u8 = "",
     validated_with: []const u8 = "",
     last_validation_at: []const u8 = "",
@@ -26,6 +27,7 @@ pub const SavedProviderInput = struct {
     provider: []const u8,
     api_key: []const u8,
     model: []const u8 = "",
+    base_url: []const u8 = "",
     validated_with: []const u8 = "",
 };
 
@@ -33,6 +35,7 @@ pub const SavedProviderUpdate = struct {
     name: ?[]const u8 = null,
     api_key: ?[]const u8 = null,
     model: ?[]const u8 = null,
+    base_url: ?[]const u8 = null,
     validated_at: ?[]const u8 = null,
     validated_with: ?[]const u8 = null,
     last_validation_at: ?[]const u8 = null,
@@ -205,6 +208,7 @@ pub const State = struct {
         self.allocator.free(sp.provider);
         self.allocator.free(sp.api_key);
         if (sp.model.len > 0) self.allocator.free(sp.model);
+        if (sp.base_url.len > 0) self.allocator.free(sp.base_url);
         if (sp.validated_at.len > 0) self.allocator.free(sp.validated_at);
         if (sp.validated_with.len > 0) self.allocator.free(sp.validated_with);
         if (sp.last_validation_at.len > 0) self.allocator.free(sp.last_validation_at);
@@ -313,6 +317,8 @@ pub const State = struct {
             errdefer allocator.free(owned_api_key);
             const owned_model = if (sp.model.len > 0) try allocator.dupe(u8, sp.model) else @as([]const u8, "");
             errdefer if (owned_model.len > 0) allocator.free(@constCast(owned_model));
+            const owned_base_url = if (sp.base_url.len > 0) try allocator.dupe(u8, sp.base_url) else @as([]const u8, "");
+            errdefer if (owned_base_url.len > 0) allocator.free(@constCast(owned_base_url));
             const owned_validated_at = if (sp.validated_at.len > 0) try allocator.dupe(u8, sp.validated_at) else @as([]const u8, "");
             errdefer if (owned_validated_at.len > 0) allocator.free(@constCast(owned_validated_at));
             const owned_validated_with = if (sp.validated_with.len > 0) try allocator.dupe(u8, sp.validated_with) else @as([]const u8, "");
@@ -326,6 +332,7 @@ pub const State = struct {
                 .provider = owned_provider,
                 .api_key = owned_api_key,
                 .model = owned_model,
+                .base_url = owned_base_url,
                 .validated_at = owned_validated_at,
                 .validated_with = owned_validated_with,
                 .last_validation_at = owned_last_validation_at,
@@ -534,6 +541,8 @@ pub const State = struct {
         errdefer self.allocator.free(api_key);
         const model = if (input.model.len > 0) try self.allocator.dupe(u8, input.model) else @as([]const u8, "");
         errdefer if (model.len > 0) self.allocator.free(@constCast(model));
+        const base_url = if (input.base_url.len > 0) try self.allocator.dupe(u8, input.base_url) else @as([]const u8, "");
+        errdefer if (base_url.len > 0) self.allocator.free(@constCast(base_url));
         const validated_with = if (input.validated_with.len > 0) try self.allocator.dupe(u8, input.validated_with) else @as([]const u8, "");
         errdefer if (validated_with.len > 0) self.allocator.free(@constCast(validated_with));
 
@@ -543,6 +552,7 @@ pub const State = struct {
             .provider = provider,
             .api_key = api_key,
             .model = model,
+            .base_url = base_url,
             .validated_at = "",
             .validated_with = validated_with,
             .last_validation_at = "",
@@ -563,6 +573,11 @@ pub const State = struct {
                 else
                     null;
                 errdefer if (new_model) |m| if (m.len > 0) self.allocator.free(@constCast(m));
+                const new_base_url = if (update.base_url) |base_url|
+                    if (base_url.len > 0) try self.allocator.dupe(u8, base_url) else @as([]const u8, "")
+                else
+                    null;
+                errdefer if (new_base_url) |url| if (url.len > 0) self.allocator.free(@constCast(url));
                 const new_validated_at = if (update.validated_at) |validated_at|
                     if (validated_at.len > 0) try self.allocator.dupe(u8, validated_at) else @as([]const u8, "")
                 else
@@ -594,6 +609,11 @@ pub const State = struct {
                     const m = new_model.?;
                     if (sp.model.len > 0) self.allocator.free(sp.model);
                     sp.model = m;
+                }
+                if (update.base_url != null) {
+                    const url = new_base_url.?;
+                    if (sp.base_url.len > 0) self.allocator.free(sp.base_url);
+                    sp.base_url = url;
                 }
                 if (update.validated_at != null) {
                     const t = new_validated_at.?;
@@ -631,11 +651,12 @@ pub const State = struct {
         return false;
     }
 
-    pub fn hasSavedProvider(self: *State, provider: []const u8, api_key: []const u8, model: []const u8) bool {
+    pub fn hasSavedProvider(self: *State, provider: []const u8, api_key: []const u8, model: []const u8, base_url: []const u8) bool {
         for (self.saved_providers.items) |sp| {
             if (std.mem.eql(u8, sp.provider, provider) and
                 std.mem.eql(u8, sp.api_key, api_key) and
-                std.mem.eql(u8, sp.model, model))
+                std.mem.eql(u8, sp.model, model) and
+                std.mem.eql(u8, sp.base_url, base_url))
             {
                 return true;
             }
@@ -643,11 +664,12 @@ pub const State = struct {
         return false;
     }
 
-    pub fn findSavedProviderId(self: *State, provider: []const u8, api_key: []const u8, model: []const u8) ?u32 {
+    pub fn findSavedProviderId(self: *State, provider: []const u8, api_key: []const u8, model: []const u8, base_url: []const u8) ?u32 {
         for (self.saved_providers.items) |sp| {
             if (std.mem.eql(u8, sp.provider, provider) and
                 std.mem.eql(u8, sp.api_key, api_key) and
-                std.mem.eql(u8, sp.model, model))
+                std.mem.eql(u8, sp.model, model) and
+                std.mem.eql(u8, sp.base_url, base_url))
             {
                 return sp.id;
             }
@@ -1152,6 +1174,7 @@ test "add saved provider, save, load, verify round-trip" {
             .provider = "openrouter",
             .api_key = "sk-or-xxx",
             .model = "anthropic/claude-sonnet-4",
+            .base_url = "https://api.ranus.tech/v1",
             .validated_with = "aizen",
         });
 
@@ -1160,6 +1183,7 @@ test "add saved provider, save, load, verify round-trip" {
         try std.testing.expectEqualStrings("openrouter", providers[0].provider);
         try std.testing.expectEqualStrings("sk-or-xxx", providers[0].api_key);
         try std.testing.expectEqualStrings("anthropic/claude-sonnet-4", providers[0].model);
+        try std.testing.expectEqualStrings("https://api.ranus.tech/v1", providers[0].base_url);
         try std.testing.expectEqualStrings("OpenRouter #1", providers[0].name);
         try std.testing.expectEqual(@as(u32, 1), providers[0].id);
 
@@ -1174,6 +1198,7 @@ test "add saved provider, save, load, verify round-trip" {
         try std.testing.expectEqual(@as(usize, 1), providers.len);
         try std.testing.expectEqualStrings("openrouter", providers[0].provider);
         try std.testing.expectEqualStrings("sk-or-xxx", providers[0].api_key);
+        try std.testing.expectEqualStrings("https://api.ranus.tech/v1", providers[0].base_url);
         try std.testing.expectEqualStrings("OpenRouter #1", providers[0].name);
         try std.testing.expectEqual(@as(u32, 1), providers[0].id);
     }
@@ -1254,6 +1279,23 @@ test "update saved provider clears model" {
     try std.testing.expectEqualStrings("", providers[0].model);
 }
 
+test "update saved provider base_url" {
+    const allocator = std.testing.allocator;
+    const path = try testPath(allocator, "state.json");
+    defer allocator.free(path);
+    defer cleanupTestDir();
+
+    var s = State.init(allocator, path);
+    defer s.deinit();
+
+    try s.addSavedProvider(.{ .provider = "openai", .api_key = "key1", .base_url = "https://old.example/v1" });
+    const updated = try s.updateSavedProvider(1, .{ .base_url = "https://api.ranus.tech/v1" });
+    try std.testing.expect(updated);
+
+    const providers = s.savedProviders();
+    try std.testing.expectEqualStrings("https://api.ranus.tech/v1", providers[0].base_url);
+}
+
 test "saved provider validation metadata persists through update and load" {
     const allocator = std.testing.allocator;
     const path = try testPath(allocator, "state.json");
@@ -1288,6 +1330,33 @@ test "saved provider validation metadata persists through update and load" {
         try std.testing.expectEqualStrings("2026-03-14T11:22:33Z", provider.last_validation_at);
         try std.testing.expect(!provider.last_validation_ok);
     }
+}
+
+test "find saved provider id distinguishes base_url variants" {
+    const allocator = std.testing.allocator;
+    const path = try testPath(allocator, "state.json");
+    defer allocator.free(path);
+    defer cleanupTestDir();
+
+    var s = State.init(allocator, path);
+    defer s.deinit();
+
+    try s.addSavedProvider(.{
+        .provider = "openai",
+        .api_key = "key1",
+        .model = "ranus-reason",
+        .base_url = "https://api.ranus.tech/v1",
+    });
+    try s.addSavedProvider(.{
+        .provider = "openai",
+        .api_key = "key1",
+        .model = "ranus-reason",
+        .base_url = "https://openrouter.ai/api/v1",
+    });
+
+    try std.testing.expectEqual(@as(usize, 2), s.savedProviders().len);
+    try std.testing.expectEqual(@as(?u32, 1), s.findSavedProviderId("openai", "key1", "ranus-reason", "https://api.ranus.tech/v1"));
+    try std.testing.expectEqual(@as(?u32, 2), s.findSavedProviderId("openai", "key1", "ranus-reason", "https://openrouter.ai/api/v1"));
 }
 
 test "remove saved provider" {
