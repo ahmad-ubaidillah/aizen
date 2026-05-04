@@ -129,6 +129,27 @@ zig build -Doptimize=ReleaseSmall
 zig build test --summary all
 ```
 
+### Provider-focused reduced validation (recommended for compatible endpoint work)
+
+Use this lane first when validating OpenAI-compatible/custom providers and you want to avoid unrelated channel noise:
+
+```bash
+zig build install -Dtarget=x86_64-linux-musl -Dchannels=none
+./scripts/provider-smoke.sh
+```
+
+If you also want one real provider prompt, enable live smoke explicitly:
+
+```bash
+AIZEN_RUN_LIVE_SMOKE=1 ./scripts/provider-smoke.sh
+```
+
+Notes:
+- default smoke script validates build/install + `aizen status` + `aizen capabilities --json` + `aizen config validate --json`
+- live smoke is opt-in because provider credentials/auth may be unavailable in a given shell/session
+- `AuthenticationFailed` during live smoke indicates runtime auth/config state, not necessarily a reduced-build regression
+- if a native Linux/glibc build fails early with `.sframe` / `R_X86_64_PC64`, see `docs/build-profiles.md` and use the musl provider-validation lane first
+
 Make `aizen` available on `PATH`:
 
 macOS/Linux (zsh/bash):
