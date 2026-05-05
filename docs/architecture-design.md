@@ -1,8 +1,8 @@
 # Aizen Agent — Architecture Design
 
-Status: Reference design authority
-Last reviewed: 2026-05-04
-Primary purpose: target-state architecture and system design for Aizen.
+Status: MOSTLY CURRENT
+Last updated: 2026-05-05
+Primary purpose: own the target-state architecture and system design authority for Aizen.
 
 Use `docs/roadmap-current.md` for active execution priorities.
 Use `docs/research-report.md` for ecosystem comparison and rationale for borrowed ideas.
@@ -11,6 +11,7 @@ Use `docs/done-vs-todo.md` for the quickest status snapshot.
 Overlap note:
 - This document should own the actual target architecture.
 - If a comparative recommendation in `research-report.md` conflicts with this file, this file wins.
+- If this file conflicts with live runtime behavior or verified tests, live behavior wins until the architecture is intentionally updated.
 - This file describes the intended architecture envelope, not a claim that every subsystem below is already fully productized today.
 
 **Architect Agent** | Date: 2026-05-01

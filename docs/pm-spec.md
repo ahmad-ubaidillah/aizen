@@ -1,5 +1,11 @@
 # Aizen Agent — Phase 1 MVP Implementation Spec
 
+Status: HISTORICAL
+Last updated: 2026-05-05
+Primary purpose: preserve the original Phase 1 MVP implementation specification for historical context.
+
+> **Note:** Phase 1 MVP has been completed. This document is preserved for context only. For current execution priorities, see [roadmap-current.md](./roadmap-current.md). For the fastest current snapshot, see [done-vs-todo.md](./done-vs-todo.md).
+
 **PM Agent** | Date: 2026-05-01
 **Target:** v0.1 "The Core"
 **Timeline:** 4-6 weeks

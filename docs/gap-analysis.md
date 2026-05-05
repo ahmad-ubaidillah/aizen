@@ -40,7 +40,7 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 | **Cron/Scheduling** | ✓ Full cron | ✓ Full cron | ✗ | ✓ zeph-scheduler | ✓ Full cron | ✗ |
 | **MCP Support** | ✓ Client+Server | ✓ Native client | ✓ MCP provider | ✓ MCP+OAuth | ✓ Client | ✗ |
 | **Channels** | ✓ 19 channels | ✓ Telegram/Discord/Slack | ✗ (hooks) | ✓ 5 channels | ✓ 19 channels | ✗ (terminal) |
-| **Web UI/Dashboard** | ✓ (aizen-dashboard) | ✓ Gateway+Dashboard | ✗ | ✗ (TUI only) | ✓ WebChannel | ✗ |
+| **Web UI/Dashboard** | ✓ (aizen-dashboard) | ✓ Gateway+Dashboard | ✗ | ✓ (TUI + partial web) | ✓ WebChannel | ✗ |
 | **Kanban/Tasks** | ✓ (aizen-kanban) | ✓ Plugin (SQLite) | ✗ | ✓ DAG tasks+plans | ✗ (cron only) | ✗ |
 | **Monitoring/Watch** | ✓ (aizen-watch) | ✗ | ✓ Distill Monitor | ✓ TUI dashboard | ✓ Observer vtable | ✓ rtk gain/stats |
 | **Orchestration** | ✓ (aizen-orchestrate) | ✗ | ✗ | ✓ (sub-agent) | ✗ | ✗ |
@@ -51,8 +51,8 @@ Aizen is a Zig-based autonomous AI agent forked from Aizen, rebranded and enhanc
 | **Self-Learning/Evolve** | ✗ | ✗ | ✗ | ✓ Wilson score+Bayes | ✓ SkillForge discovery | ✗ |
 | **DAG Task Orchestration** | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
 | **Structured Cmd Rewrite** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ 100+ filters |
-| **Credential Pool** | ✗ | ✓ Multi-key rotation | ✗ | ✓ Per-session quota | ✗ | ✗ |
-| **Rate Limiting** | ✗ | ✓ Built-in | ✗ | ✓ | ✗ | ✗ |
+| **Credential Pool** | ✓ Implemented | ✓ Multi-key rotation | ✗ | ✓ Per-session quota | ✗ | ✗ |
+| **Rate Limiting** | ✓ Implemented | ✓ Built-in | ✗ | ✓ | ✗ | ✗ |
 | **Model Routing** | ✓ Basic | ✓ Metadata+smart | ✗ | ✓ | ✓ | ✗ |
 | **Plugins** | ✗ | ✓ Plugin system | ✗ | ✗ | ✗ | ✗ |
 | **TUI** | ✗ | ✓ Curses/Ink | ✗ | ✓ ratatui dashboard | ✗ | ✗ |
@@ -103,7 +103,7 @@ Status note:
 | # | Gap | Source System | Impact | Effort |
 |---|---|---|---|---|
 | G1 | **Self-Learning Skills** | Zeph | Skills that evolve via Wilson score + Bayesian ranking from usage data. Aizen has SkillForge (discovery) but not self-learning. | 5-7 days |
-| G2 | **Credential Pool / Multi-Key Rotation** | Hermes | Rotate multiple API keys automatically, avoiding rate limits. | 2-3 days |
+| G2 | **Credential Pool / Multi-Key Rotation** | Hermes | ~~Rotate multiple API keys automatically, avoiding rate limits.~~ **IMPLEMENTED** in commit `6910573`. Needs validation/integration. | ~~2-3 days~~ 1-2 days validation |
 | G3 | **Plugin System** | Hermes | Runtime-loadable plugins for extending agent capabilities without recompilation. | 4-5 days |
 | G4 | **TUI (Terminal UI)** | Hermes/Zeph | Interactive terminal dashboard for monitoring, chat, and control. | 5-7 days |
 | G5 | **Documentation Cleanup / Authority Clarity** | Internal | Shipping/readiness bottleneck: stale branding, confusing docs authority, and trust issues. Track as operational P0 work, not as a long-term strategic capability gap. | 1-2 days |
@@ -115,7 +115,7 @@ Status note:
 | G6 | **Structured Output Rewriting** | RTK | Implemented in repo history, but operational adoption/integration status still needs validation. | Improve output filtering quality and token handling. | 1-3 days hardening/integration |
 | G7 | **DAG Task Orchestration** | Zeph | Implemented in repo history, but not the current operational bottleneck. | Parallel/sequential step execution and reusable plans. | 1-3 days validation/docs |
 | G8 | **MCP Injection Detection** | Zeph | Still missing as a first-class hardened feature. | Prompt-injection defense for MCP/tool surfaces. | 2-3 days |
-| G9 | **Rate Limiting** | Hermes | Still missing or incomplete as explicit per-provider control. | Backoff/limit awareness for provider stability. | 2-3 days |
+| G9 | **Rate Limiting** | Hermes | **IMPLEMENTED** in commit `6910573` alongside Credential Pool. Needs validation/integration with provider response headers. | Backoff/limit awareness for provider stability. | 1-2 days validation |
 | G10 | **Memory Quality Gate** | Zeph | Still missing. | Scoring/pruning low-quality memory entries. | 3-4 days |
 | G11 | **Age-Encrypted Secrets Vault** | Zeph | Implemented in repo history; current adoption and UX still need validation. | Better secret handling posture. | 1-2 days validation/docs |
 | G12 | **Context Compression** | Hermes | Implemented in repo history; may still need integration and operator-facing validation. | Better long-context handling. | 1-3 days validation/docs |
@@ -129,6 +129,8 @@ Status note:
 | G15 | **Exfiltration Detection** | Zeph | Detect when agent tries to send sensitive data externally. | 1-2 days |
 | G16 | **Health Registry** | Aizen (observer) | Structured health checks beyond simple monitoring. | 1-2 days |
 | G17 | **Model Metadata Smart Routing** | Hermes | Intelligent model routing based on task type, cost, speed. | 2-3 days |
+| G18 | **First-Time Setup Wizard** | AizenDashboard | Guided onboarding for new users (provider setup, auth, first agent). | ☑ Done |
+| G19 | **Workflow Visual Editor** | AizenDashboard | Drag-and-drop node editor for DAG workflows (current: JSON editor + read-only graph viewer). | ☑ Done |
 
 ---
 
@@ -144,22 +146,23 @@ Status note:
 - Continue docs authority cleanup (README, roadmap-current, historical labels)
 
 ### P1 — Strategic next
-- Credential Pool / Multi-Key Rotation
 - Plugin System
 - TUI Dashboard
-- Rate Limiting
 - MCP Injection Detection
+- Memory Quality Gate
 - Build/profile matrix hardening and explicit optional-web documentation
 
 ### P2 — Strategic later
 - Self-Learning Skills
-- Memory Quality Gate
 - Trajectory Replay / PII Filter / Exfiltration Detection / Health Registry / Model Metadata Smart Routing
+- First-Time Setup Wizard / Workflow Visual Editor
 - Validation and productization pass for already-implemented strategic features:
   - Structured Output Rewriting
   - DAG Task Orchestration
   - Age-Encrypted Vaults
   - Context Compression
+  - Credential Pool / Multi-Key Rotation
+  - Rate Limiting
 
 Why this framing is better:
 - separates current shipping blockers from strategic platform investments

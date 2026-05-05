@@ -7,7 +7,9 @@ Hermes Agent (Python) implements two complementary systems:
 1. **Credential Pool** (`credential_pool.py`) — multi-key per-provider storage with rotation strategies, exhaustion cooldown, OAuth refresh, and persistent JSON state.
 2. **Rate Limit Tracker** (`rate_limit_tracker.py`) — parsing of `x-ratelimit-*` response headers into per-provider rate-limit buckets with usage display.
 
-Aizen currently has **neither**. Its `api_key.zig` provides single-key resolution from config/env. Its `ReliableProvider` does simple round-robin key rotation with exponential backoff but has no persistent key pool, no exhaustion tracking, and no per-provider rate-limit state from API responses.
+Aizen now has both systems implemented (commit `6910573`). This document was the original design spec and is preserved as reference for the implementation architecture.
+
+**Status:** IMPLEMENTED — kept for architectural reference.
 
 This document designs both subsystems for Aizen in idiomatic Zig, respecting the project's constraints: zero-dependency, <5 MB peak RSS, vtable-based architecture, and explicit allocator discipline.
 

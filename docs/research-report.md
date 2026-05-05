@@ -1,8 +1,8 @@
 # AI Agent Ecosystem Comparison Report
 
-Status: Reference
-Last reviewed: 2026-05-04
-Primary purpose: ecosystem comparison, source-system strengths, and rationale for feature borrowing.
+Status: REFERENCE
+Last updated: 2026-05-05
+Primary purpose: own the broader ecosystem comparison, source-system strengths, and rationale for feature borrowing.
 
 Use `docs/architecture-design.md` for the actual target-state Aizen design.
 Use `docs/roadmap-current.md` for active execution priorities.
@@ -11,6 +11,7 @@ Use `docs/done-vs-todo.md` for the quickest done-vs-outstanding snapshot.
 Overlap note:
 - This document may discuss recommended architecture at a comparative/research level.
 - When it conflicts with `architecture-design.md`, treat `architecture-design.md` as the design authority.
+- When it conflicts with `roadmap-current.md`, live kanban, or verified runtime behavior, treat those execution sources as authoritative for near-term decisions.
 - Some comparison bullets are intentionally aspirational or capability-oriented; they should not be read as proof that every borrowed feature is fully delivered in current Aizen runtime behavior.
 
 **Researcher Agent Report** | Date: 2026-05-01

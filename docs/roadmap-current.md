@@ -1,6 +1,6 @@
 # Aizen Current Roadmap and Status
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 Status owner: active working document synced with live build/test findings and kanban
 
 ## 1. Executive Summary
@@ -127,6 +127,8 @@ Taken from the earlier strategic documents and still valid:
 - Memory quality gate
 - Encrypted secrets vault
 - Advanced context compression
+- First-time setup wizard (dashboard onboarding)
+- Workflow visual drag-drop editor
 
 ## 5. Live Kanban Status Snapshot
 

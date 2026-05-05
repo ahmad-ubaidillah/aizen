@@ -1,8 +1,9 @@
 # Aizen Docs Snapshot — Done vs Todo
 
-Last updated: 2026-05-04
+Status: CURRENT
+Last updated: 2026-05-05
 Purpose: one-file quick status snapshot derived from current docs + repo state
-Primary source for detailed near-term truth: `roadmap-current.md`
+Primary detailed source for near-term truth: `roadmap-current.md`
 
 ## Done / confirmed
 
@@ -63,3 +64,7 @@ Primary source for detailed near-term truth: `roadmap-current.md`
 - Use `roadmap-current.md` for current prioritization.
 - Use `gap-analysis.md` for long-term strategic framing.
 - Use live kanban for actual execution state.
+
+## Changelog
+
+- **2026-05-05**: Added explicit `Status: CURRENT` header and refreshed snapshot metadata to match current docs governance.
