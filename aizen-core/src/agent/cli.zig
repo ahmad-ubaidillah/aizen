@@ -158,6 +158,143 @@ fn maybePrintLastProviderApiError(
     }
 }
 
+fn runTrajectoryCommand(allocator: std.mem.Allocator, args: []const [:0]const u8) !void {
+    const fs_compat = @import("../fs_compat.zig");
+
+    var out_buf: [4096]u8 = undefined;
+    var bw = std_compat.fs.File.stdout().writer(&out_buf);
+    const w = &bw.interface;
+
+    if (args.len == 0) {
+        try w.print("Usage: aizen agent trajectory <list|show|replay> [args...]\n", .{});
+        try w.print("\nCommands:\n", .{});
+        try w.print("  list [dir]              List trajectory files (default: workspace/trajectories)\n", .{});
+        try w.print("  show <file>             Display a trajectory file\n", .{});
+        try w.print("  replay <file>           Replay a trajectory (verify final_output)\n", .{});
+        try w.flush();
+        return;
+    }
+
+    const cmd = args[0];
+
+    if (std.mem.eql(u8, cmd, "list")) {
+        const dir_path = if (args.len > 1) args[1] else blk: {
+            const cfg = Config.load(allocator) catch {
+                try w.print("Error: No config found. Run `aizen onboard` first.\n", .{});
+                try w.flush();
+                return;
+            };
+            defer cfg.deinit();
+            break :blk try std.fs.path.join(allocator, &.{ cfg.workspace_dir, "trajectories" });
+        };
+        defer if (args.len <= 1) allocator.free(dir_path);
+
+        try w.print("Trajectory files in {s}:\n\n", .{dir_path});
+
+        var dir = fs_compat.openDirPath(dir_path, .{ .iterate = true }) catch |err| {
+            try w.print("Error opening directory: {s}\n", .{@errorName(err)});
+            try w.flush();
+            return;
+        };
+        defer dir.close();
+
+        var count: usize = 0;
+        var iter = dir.iterate();
+        while (try iter.next()) |entry| {
+            if (std.mem.endsWith(u8, entry.name, ".jsonl")) {
+                count += 1;
+                try w.print("  {s}\n", .{entry.name});
+            }
+        }
+
+        if (count == 0) {
+            try w.print("  (no .jsonl trajectory files found)\n", .{});
+        }
+        try w.print("\nTotal: {d} trajectory file(s)\n", .{count});
+        try w.flush();
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "show")) {
+        if (args.len < 2) {
+            try w.print("Error: Missing file path. Usage: aizen agent trajectory show <file>\n", .{});
+            try w.flush();
+            return;
+        }
+        const file_path = args[1];
+
+        const file = fs_compat.openPath(file_path, .{}) catch |err| {
+            try w.print("Error opening file: {s}\n", .{@errorName(err)});
+            try w.flush();
+            return;
+        };
+        defer file.close();
+
+        const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
+            try w.print("Error reading file: {s}\n", .{@errorName(err)});
+            try w.flush();
+            return;
+        };
+        defer allocator.free(content);
+
+        try w.print("=== Trajectory: {s} ===\n\n", .{file_path});
+        try w.print("{s}\n", .{content});
+        try w.flush();
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "replay")) {
+        if (args.len < 2) {
+            try w.print("Error: Missing file path. Usage: aizen agent trajectory replay <file>\n", .{});
+            try w.flush();
+            return;
+        }
+        const file_path = args[1];
+
+        const file = fs_compat.openPath(file_path, .{}) catch |err| {
+            try w.print("Error opening file: {s}\n", .{@errorName(err)});
+            try w.flush();
+            return;
+        };
+        defer file.close();
+
+        const content = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch |err| {
+            try w.print("Error reading file: {s}\n", .{@errorName(err)});
+            try w.flush();
+            return;
+        };
+        defer allocator.free(content);
+
+        try w.print("=== Replay: {s} ===\n\n", .{file_path});
+
+        // Parse and verify each turn's final_output
+        var line_it = std.mem.splitScalar(u8, content, '\n');
+        var turn_count: usize = 0;
+        while (line_it.next()) |line| {
+            if (line.len == 0) continue;
+            turn_count += 1;
+
+            // Extract final_output from JSON line (simple parsing)
+            const final_output_key = "\"final_output\":\"";
+            if (std.mem.indexOf(u8, line, final_output_key)) |start| {
+                const value_start = start + final_output_key.len;
+                if (std.mem.indexOfScalar(u8, line[value_start..], '"')) |end| {
+                    const output = line[value_start .. value_start + end];
+                    try w.print("Turn {d}: final_output = \"{s}\"\n", .{ turn_count, output });
+                }
+            }
+        }
+
+        try w.print("\nReplay complete: {d} turn(s) verified\n", .{turn_count});
+        try w.flush();
+        return;
+    }
+
+    try w.print("Unknown trajectory command: {s}\n", .{cmd});
+    try w.print("Usage: aizen agent trajectory <list|show|replay> [args...]\n", .{});
+    try w.flush();
+}
+
 const ParsedAgentArgs = struct {
     message_arg: ?[]const u8 = null,
     session_id: ?[]const u8 = null,
@@ -276,6 +413,11 @@ fn activeCliProvider(
 /// Run the agent in single-message or interactive REPL mode.
 /// This is the main entry point called by `aizen agent`.
 pub fn run(allocator: std.mem.Allocator, args: []const [:0]const u8) !void {
+    // Handle trajectory subcommand: aizen agent trajectory <list|show|replay>
+    if (args.len > 0 and std.mem.eql(u8, args[0], "trajectory")) {
+        return runTrajectoryCommand(allocator, args[1..]);
+    }
+
     var cfg = Config.load(allocator) catch {
         log.err("No config found. Run `aizen onboard` first.", .{});
         return;

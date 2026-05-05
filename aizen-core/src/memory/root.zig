@@ -67,6 +67,9 @@ pub const migrate = @import("lifecycle/migrate.zig");
 pub const diagnostics = @import("lifecycle/diagnostics.zig");
 pub const summarizer = @import("lifecycle/summarizer.zig");
 
+// quality/ (Layer E: Quality Gate)
+pub const quality = @import("quality.zig");
+
 pub const SqliteMemory = sqlite.SqliteMemory;
 pub const MarkdownMemory = markdown.MarkdownMemory;
 pub const NoneMemory = none.NoneMemory;
@@ -98,6 +101,12 @@ pub const RetrievalCandidate = retrieval.RetrievalCandidate;
 pub const RetrievalSourceAdapter = retrieval.RetrievalSourceAdapter;
 pub const PrimaryAdapter = retrieval.PrimaryAdapter;
 pub const RetrievalEngine = retrieval.RetrievalEngine;
+
+// Quality gate re-exports
+pub const MemReader = quality.MemReader;
+pub const QualityScore = quality.QualityScore;
+pub const QualityConfig = quality.QualityConfig;
+pub const QualityResult = quality.QualityResult;
 pub const QmdAdapter = retrieval_qmd.QmdAdapter;
 pub const rrfMerge = rrf.rrfMerge;
 pub const applyTemporalDecay = temporal_decay.applyTemporalDecay;
@@ -601,6 +610,9 @@ pub const MemoryRuntime = struct {
     _outbox: ?*outbox.VectorOutbox = null,
     _sidecar_db_path: ?[*:0]const u8 = null,
 
+    // P4: quality gate (optional)
+    _mem_reader: ?quality.MemReader = null,
+
     /// High-level search: uses rollout policy to decide keyword-only vs hybrid.
     pub fn search(self: *MemoryRuntime, allocator: std.mem.Allocator, query: []const u8, limit: usize, session_id: ?[]const u8) ![]RetrievalCandidate {
         if (!self._search_enabled) return allocator.alloc(RetrievalCandidate, 0);
@@ -648,6 +660,103 @@ pub const MemoryRuntime = struct {
     /// Get current rollout mode.
     pub fn rolloutMode(self: *const MemoryRuntime) rollout.RolloutMode {
         return self._rollout_policy.mode;
+    }
+
+    /// Store a memory entry with quality gate evaluation.
+    /// If quality gate is enabled and the memory scores below threshold,
+    /// it is either rejected (returning error.LowQualityMemory) or
+    /// stored with a quality flag depending on config.
+    pub fn storeWithQuality(
+        self: *MemoryRuntime,
+        key: []const u8,
+        content: []const u8,
+        category: MemoryCategory,
+        session_id: ?[]const u8,
+    ) !void {
+        if (self._mem_reader) |*reader| {
+            // Fetch existing memories for contradiction check
+            const existing = try self.memory.list(self._allocator, null, session_id);
+            defer freeEntries(self._allocator, existing);
+
+            const result = try reader.evaluate(content, existing);
+            defer result.deinit(self._allocator);
+
+            if (!result.accepted) {
+                log.warn("memory quality gate rejected key '{s}': {s} (score={d:.2})", .{
+                    key,
+                    result.reason orelse "below threshold",
+                    result.score.overall,
+                });
+                if (!reader.config.flag_instead_of_reject) {
+                    return quality.Error.LowQualityMemory;
+                }
+                // Fallthrough: store with flag (content prefix)
+            } else {
+                log.debug("memory quality gate accepted key '{s}' (score={d:.2})", .{
+                    key,
+                    result.score.overall,
+                });
+            }
+        }
+
+        try self.memory.store(key, content, category, session_id);
+        self.syncVectorAfterStore(self._allocator, key, content, session_id);
+    }
+
+    /// Run hygiene (archive, purge, conversation prune) and then auto-prune
+    /// low-quality memories if quality gate is enabled.
+    /// Returns combined hygiene report with prune count.
+    pub fn runHygiene(self: *MemoryRuntime, workspace_dir: []const u8) hygiene.HygieneReport {
+        const hygiene_cfg = hygiene.HygieneConfig{
+            .hygiene_enabled = true,
+            .archive_after_days = 7, // default, should be from config
+            .purge_after_days = 30,
+            .preserve_before_purge = true,
+            .conversation_retention_days = 30,
+            .workspace_dir = workspace_dir,
+        };
+        var preserve_sync_ctx = HygienePreserveSyncCtx{
+            .outbox = self._outbox,
+            .embed_provider = self._embedding_provider,
+            .vector_store = self._vector_store,
+            .circuit_breaker = self._circuit_breaker,
+        };
+        const preserve_sync_hook: ?hygiene.PreserveSyncHook = if (self._outbox != null or
+            (self._embedding_provider != null and self._vector_store != null))
+            .{
+                .ptr = @ptrCast(&preserve_sync_ctx),
+                .callback = syncPreservedChunkToVector,
+            }
+        else
+            null;
+        var report = hygiene.runIfDue(self._allocator, hygiene_cfg, self.memory, preserve_sync_hook);
+        report.pruned_conversation_rows += self.pruneLowQuality();
+        return report;
+    }
+
+    /// Prune low-quality memories if quality gate and auto-prune are enabled.
+    /// Returns number of entries pruned.
+    pub fn pruneLowQuality(self: *MemoryRuntime) usize {
+        if (self._mem_reader) |reader| {
+            if (reader.config.auto_prune_enabled) {
+                // Only SQLite backend supports quality_score column
+                const backend_name = self.memory.name();
+                if (std.mem.eql(u8, backend_name, "sqlite")) {
+                    if (build_options.enable_sqlite) {
+                        const sqlite_mem = @as(*sqlite.SqliteMemory, @ptrCast(@alignCast(self.memory.ptr)));
+                        const pruned = sqlite_mem.pruneLowQuality(
+                            reader.config.prune_threshold,
+                            reader.config.prune_max_per_run,
+                        ) catch |err| {
+                            log.warn("auto-prune failed: {}", .{err});
+                            return 0;
+                        };
+                        return pruned;
+                    }
+                }
+            }
+        }
+        return 0;
     }
 
     /// Best-effort vector sync after a store() call.
@@ -806,6 +915,7 @@ pub const MemoryRuntime = struct {
             self._allocator.destroy(rc);
         }
         if (self._cache_db_path) |p| self._allocator.free(std.mem.span(p));
+        if (self._mem_reader) |*reader| reader.deinit();
         self.memory.deinit();
         if (self._db_path) |p| self._allocator.free(std.mem.span(p));
     }
@@ -1323,6 +1433,21 @@ pub fn initRuntime(
         .auto_extract_semantic = config.summarizer.auto_extract_semantic,
     };
 
+    // ── Quality gate: MemReader ──
+    var mem_reader: ?quality.MemReader = null;
+    if (config.quality.enabled) {
+        mem_reader = quality.MemReader.init(allocator, .{
+            .enabled = config.quality.enabled,
+            .min_overall_score = config.quality.min_overall_score,
+            .weight_information = config.quality.weight_information,
+            .weight_references = config.quality.weight_references,
+            .weight_contradiction = config.quality.weight_contradiction,
+            .flag_instead_of_reject = config.quality.flag_instead_of_reject,
+            .max_contradiction_check = config.quality.max_contradiction_check,
+            .min_content_length = config.quality.min_content_length,
+        });
+    }
+
     // ── Startup diagnostic ──
     const retrieval_mode: []const u8 = if (!config.search.enabled)
         "disabled"
@@ -1382,6 +1507,7 @@ pub fn initRuntime(
         ._circuit_breaker = cb_inst,
         ._outbox = outbox_inst,
         ._sidecar_db_path = sidecar_db_path,
+        ._mem_reader = mem_reader,
     };
 }
 

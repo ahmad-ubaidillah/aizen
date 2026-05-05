@@ -405,6 +405,75 @@ pub const SqliteMemory = struct {
         }
     }
 
+    /// Migration: add quality_score column to existing databases.
+    pub fn migrateQualityScore(self: *Self) !void {
+        var err_msg: [*c]u8 = null;
+        const rc = c.sqlite3_exec(
+            self.db,
+            "ALTER TABLE memories ADD COLUMN quality_score REAL DEFAULT 0.0;",
+            null,
+            null,
+            &err_msg,
+        );
+        if (rc != c.SQLITE_OK) {
+            var ignore_error = false;
+            if (err_msg) |msg| {
+                const msg_text = std.mem.span(msg);
+                ignore_error = std.mem.indexOf(u8, msg_text, "duplicate column name") != null;
+            }
+            if (!ignore_error) {
+                self.logExecFailure("quality_score migration", "ALTER TABLE memories ADD COLUMN quality_score", rc, err_msg);
+            }
+            if (err_msg) |msg| c.sqlite3_free(msg);
+        }
+        // Ensure index exists for efficient pruning queries
+        var err_msg2: [*c]u8 = null;
+        const rc2 = c.sqlite3_exec(
+            self.db,
+            "CREATE INDEX IF NOT EXISTS idx_memories_quality ON memories(quality_score);",
+            null,
+            null,
+            &err_msg2,
+        );
+        if (rc2 != c.SQLITE_OK) {
+            self.logExecFailure("quality_score index", "CREATE INDEX idx_memories_quality", rc2, err_msg2);
+            if (err_msg2) |msg| c.sqlite3_free(msg);
+        }
+    }
+
+    /// Prune memories with quality_score below threshold.
+    /// Returns number of entries removed.
+    pub fn pruneLowQuality(self: *Self, threshold: f64, max_entries: usize) !usize {
+        const sql =
+            \\ DELETE FROM memories
+            \\ WHERE key IN (
+            \\   SELECT key FROM memories
+            \\   WHERE COALESCE(quality_score, 0.0) < ?
+            \\   ORDER BY created_at ASC
+            \\   LIMIT ?
+            \\ );
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        var rc = c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null);
+        if (rc != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        rc = c.sqlite3_bind_double(stmt, 1, threshold);
+        if (rc != c.SQLITE_OK) return error.BindFailed;
+
+        rc = c.sqlite3_bind_int64(stmt, 2, @intCast(max_entries));
+        if (rc != c.SQLITE_OK) return error.BindFailed;
+
+        rc = c.sqlite3_step(stmt);
+        if (rc != c.SQLITE_DONE) return error.StepFailed;
+
+        const deleted = c.sqlite3_changes(self.db);
+        if (deleted > 0) {
+            log.info("pruned {d} low-quality memories (threshold={d:.2})", .{ deleted, threshold });
+        }
+        return @intCast(deleted);
+    }
+
     pub fn migrateAgentNamespace(self: *Self) !void {
         {
             const check_sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_memories_key_session'";

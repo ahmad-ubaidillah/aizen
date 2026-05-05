@@ -1194,6 +1194,7 @@ pub const MemoryConfig = struct {
     clickhouse: MemoryClickHouseConfig = .{},
     retrieval_stages: MemoryRetrievalStagesConfig = .{},
     summarizer: MemorySummarizerConfig = .{},
+    quality: MemoryQualityConfig = .{},
 
     /// Apply profile defaults. Only sets fields that are still at their default values,
     /// so explicit user overrides always win (profile is applied AFTER parsing).
@@ -1438,6 +1439,31 @@ pub const MemorySummarizerConfig = struct {
     window_size_tokens: u32 = 4000,
     summary_max_tokens: u32 = 500,
     auto_extract_semantic: bool = true,
+};
+
+pub const MemoryQualityConfig = struct {
+    /// Enable MemReader quality gate on memory store().
+    enabled: bool = false,
+    /// Minimum overall score (0.0–1.0) to accept a memory.
+    min_overall_score: f64 = 0.3,
+    /// Weight for information value in overall score.
+    weight_information: f64 = 0.5,
+    /// Weight for reference completeness in overall score.
+    weight_references: f64 = 0.3,
+    /// Weight for contradiction risk in overall score.
+    weight_contradiction: f64 = 0.2,
+    /// When true, low-quality memories are stored with a flag instead of rejected.
+    flag_instead_of_reject: bool = true,
+    /// Maximum memories to check for contradiction (performance limit).
+    max_contradiction_check: usize = 50,
+    /// Minimum content length to score (very short memories get low info value).
+    min_content_length: usize = 20,
+    /// Enable automatic pruning of low-quality memories during hygiene.
+    auto_prune_enabled: bool = false,
+    /// Quality threshold below which memories are pruned (0.0–1.0).
+    prune_threshold: f64 = 0.2,
+    /// Maximum number of low-quality entries to prune per hygiene run.
+    prune_max_per_run: usize = 100,
 };
 
 // ── Tunnel config ───────────────────────────────────────────────

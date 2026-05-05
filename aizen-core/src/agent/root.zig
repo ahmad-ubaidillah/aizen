@@ -29,6 +29,7 @@ const ObserverEvent = observability.ObserverEvent;
 const SecurityPolicy = @import("../security/policy.zig").SecurityPolicy;
 const util = @import("../util.zig");
 const verbose_mod = @import("../verbose.zig");
+const health = @import("../health.zig");
 
 const cache = memory_mod.cache;
 pub const dispatcher = @import("dispatcher.zig");
@@ -38,6 +39,8 @@ pub const max_tokens_resolver = @import("max_tokens.zig");
 pub const prompt = @import("prompt.zig");
 pub const memory_loader = @import("memory_loader.zig");
 pub const commands = @import("commands.zig");
+pub const trajectory = @import("trajectory.zig");
+pub const model_router = @import("model_router.zig");
 const ParsedToolCall = dispatcher.ParsedToolCall;
 const ToolExecutionResult = dispatcher.ToolExecutionResult;
 
@@ -382,6 +385,9 @@ pub const Agent = struct {
     /// Whether context was force-compacted due to exhaustion during the current turn.
     context_was_compacted: bool = false,
 
+    /// Optional trajectory recorder for debugging and replay.
+    trajectory_recorder: ?*trajectory.TrajectoryRecorder = null,
+
     /// An owned copy of a ChatMessage, where content is heap-allocated.
     pub const OwnedMessage = struct {
         role: providers.Role,
@@ -564,6 +570,11 @@ pub const Agent = struct {
             entry.deinit(self.allocator);
         }
         self.degraded_routes.deinit(self.allocator);
+        if (self.trajectory_recorder) |rec| {
+            rec.deinit();
+            self.allocator.destroy(rec);
+            self.trajectory_recorder = null;
+        }
         self.allocator.free(self.tool_specs);
     }
 
@@ -573,6 +584,28 @@ pub const Agent = struct {
 
     pub fn clearInterruptRequest(self: *Agent) void {
         self.interrupt_requested.store(false, .release);
+    }
+
+    /// Initialize trajectory recording for debugging and replay.
+    /// If already initialized, the old recorder is cleaned up.
+    pub fn initTrajectoryRecorder(self: *Agent, config: trajectory.TrajectoryConfig) !void {
+        if (self.trajectory_recorder) |rec| {
+            rec.deinit();
+            self.allocator.destroy(rec);
+        }
+        const rec = try self.allocator.create(trajectory.TrajectoryRecorder);
+        rec.* = try trajectory.TrajectoryRecorder.init(self.allocator, config, self.workspace_dir);
+        self.trajectory_recorder = rec;
+    }
+
+    /// Register agent health component for liveness/readiness probes.
+    pub fn registerHealth(_: *Agent) void {
+        health.markComponentOk("agent");
+    }
+
+    /// Mark agent as unhealthy with the given error message.
+    pub fn markHealthError(_: *Agent, error_message: []const u8) void {
+        health.markComponentError("agent", error_message);
     }
 
     fn isInterruptRequested(self: *const Agent) bool {
@@ -1737,6 +1770,32 @@ pub const Agent = struct {
     /// Execute a single conversation turn: send messages to LLM, parse tool calls,
     /// execute tools, and loop until a final text response is produced.
     pub fn turn(self: *Agent, user_message: []const u8) ![]const u8 {
+        // Start trajectory recording if enabled
+        var builder_opt: ?trajectory.TurnBuilder = null;
+        if (self.trajectory_recorder) |rec| {
+            builder_opt = rec.startTurn(user_message);
+        }
+        errdefer {
+            if (builder_opt) |*builder| {
+                builder.setSuccess(false);
+                builder.commit();
+                builder.deinit();
+            }
+        }
+
+        const result = try self.turnInternal(user_message);
+
+        if (builder_opt) |*builder| {
+            builder.setFinalOutput(result);
+            builder.setSuccess(true);
+            builder.setUsage(self.last_turn_usage);
+            builder.commit();
+            builder.deinit();
+        }
+        return result;
+    }
+
+    fn turnInternal(self: *Agent, user_message: []const u8) ![]const u8 {
         self.context_was_compacted = false;
         commands.refreshSubagentToolContext(self);
 

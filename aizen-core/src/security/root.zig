@@ -20,6 +20,8 @@ pub const firejail = @import("firejail.zig");
 pub const bubblewrap = @import("bubblewrap.zig");
 pub const docker = @import("docker.zig");
 pub const detect = @import("detect.zig");
+pub const pii_filter = @import("pii_filter.zig");
+pub const exfiltration = @import("exfiltration.zig");
 
 // Re-exports for convenience
 pub const AuditEvent = audit.AuditEvent;
@@ -66,6 +68,12 @@ pub const ValidationResult = docker.ValidationResult;
 pub const validateWorkspaceMount = docker.validateWorkspaceMount;
 
 pub const RateTracker = tracker.RateTracker;
+
+pub const PiiFilter = pii_filter.PiiFilter;
+pub const PiiConfig = pii_filter.PiiConfig;
+
+pub const ExfiltrationDetector = exfiltration.ExfiltrationDetector;
+pub const ExfiltrationConfig = exfiltration.ExfiltrationConfig;
 
 test {
     // Run tests from all submodules
