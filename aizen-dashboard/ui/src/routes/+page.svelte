@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { goto } from "$app/navigation";
   import InstanceCard from "$lib/components/InstanceCard.svelte";
   import { api } from "$lib/api/client";
 
   let status = $state<any>(null);
   let error = $state<string | null>(null);
   let interval: ReturnType<typeof setInterval>;
+  let checkingFirstTime = $state(true);
 
   async function refresh() {
     try {
@@ -16,7 +18,25 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
+    // First-time setup check
+    try {
+      const [providers, s] = await Promise.all([
+        api.getSavedProviders(),
+        api.getStatus(),
+      ]);
+      const hasProviders = (providers?.providers?.length ?? 0) > 0;
+      const hasInstances = Object.keys(s?.instances ?? {}).length > 0;
+      if (!hasProviders && !hasInstances) {
+        goto("/wizard");
+        return;
+      }
+    } catch {
+      // Ignore check error, proceed with normal dashboard
+    } finally {
+      checkingFirstTime = false;
+    }
+
     refresh();
     interval = setInterval(refresh, 5000);
   });
@@ -30,11 +50,13 @@
     <a href="/install" class="install-btn">+ Install Component</a>
   </div>
 
-  {#if error}
+  {#if checkingFirstTime}
+    <div class="loading-state">Checking setup status...</div>
+  {:else if error}
     <div class="error-banner">ERR: {error}</div>
   {/if}
 
-  {#if status}
+  {#if !checkingFirstTime && status}
     <div class="instance-grid">
       {#each Object.entries(status.instances || {}) as [component, instances]}
         {#each Object.entries(instances as Record<string, any>) as [name, info]}
@@ -175,5 +197,12 @@
     border-color: var(--accent);
     box-shadow: 0 0 10px var(--border-glow);
     text-shadow: 0 0 8px var(--accent);
+  }
+
+  .loading-state {
+    text-align: center;
+    padding: 4rem;
+    color: var(--fg-dim);
+    font-family: var(--font-mono);
   }
 </style>

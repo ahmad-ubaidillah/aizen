@@ -6,6 +6,7 @@
   import { orchestrationUiRoutes } from '$lib/orchestration/routes';
   import GraphViewer from '$lib/components/orchestration/GraphViewer.svelte';
   import WorkflowJsonEditor from '$lib/components/orchestration/WorkflowJsonEditor.svelte';
+  import WorkflowVisualEditor from '$lib/components/orchestration/WorkflowVisualEditor.svelte';
 
   let id = $derived($page.params.id);
   let isNew = $derived(id === 'new');
@@ -26,6 +27,7 @@
   let saving = $state(false);
   let validating = $state(false);
   let validationResult = $state<{ valid: boolean; errors?: string[] } | null>(null);
+  let editorMode = $state<'json' | 'visual'>('visual');
 
   onMount(async () => {
     if (!isNew) {
@@ -98,6 +100,12 @@
       error = (e as Error).message;
     }
   }
+
+  function onVisualChange(w: any) {
+    parsedWorkflow = w;
+    jsonValue = JSON.stringify(w, null, 2);
+    parseError = '';
+  }
 </script>
 
 <div class="editor-page">
@@ -108,6 +116,10 @@
       <span class="page-title">{isNew ? 'New Workflow' : (parsedWorkflow?.name || id)}</span>
     </div>
     <div class="toolbar-actions">
+      <div class="mode-switch">
+        <button class="mode-btn" class:active={editorMode === 'visual'} onclick={() => editorMode = 'visual'}>Visual</button>
+        <button class="mode-btn" class:active={editorMode === 'json'} onclick={() => editorMode = 'json'}>JSON</button>
+      </div>
       {#if !isNew}
         <button class="tool-btn" onclick={validate} disabled={validating || !!parseError}>
           {validating ? 'Validating...' : 'Validate'}
@@ -142,13 +154,19 @@
   {#if loading}
     <div class="loading">Loading workflow...</div>
   {:else}
-    <div class="editor-panels">
-      <div class="panel-graph">
-        <GraphViewer workflow={parsedWorkflow} nodeStatus={{}} />
-      </div>
-      <div class="panel-json">
-        <WorkflowJsonEditor bind:value={jsonValue} onerror={(msg) => parseError = msg} />
-      </div>
+    <div class="editor-panels" class:visual-mode={editorMode === 'visual'}>
+      {#if editorMode === 'visual'}
+        <div class="panel-visual">
+          <WorkflowVisualEditor bind:workflow={parsedWorkflow} onChange={onVisualChange} />
+        </div>
+      {:else}
+        <div class="panel-graph">
+          <GraphViewer workflow={parsedWorkflow} nodeStatus={{}} />
+        </div>
+        <div class="panel-json">
+          <WorkflowJsonEditor bind:value={jsonValue} onerror={(msg) => parseError = msg} />
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -244,6 +262,9 @@
     flex: 1;
     min-height: 0;
   }
+  .editor-panels.visual-mode {
+    grid-template-columns: 1fr;
+  }
   .panel-graph {
     overflow: auto;
     min-height: 0;
@@ -252,6 +273,38 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+  .panel-visual {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .mode-switch {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--accent-dim);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .mode-btn {
+    padding: 0.375rem 0.625rem;
+    background: var(--bg-surface);
+    color: var(--fg-dim);
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .mode-btn:hover:not(.active) {
+    color: var(--fg);
   }
   .error-banner {
     padding: 0.75rem 1rem;
